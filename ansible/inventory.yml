@@ -1,0 +1,14 @@
+# Tokenized — render before use:  bin/render ansible/inventory.yml
+#   -> rendered/ansible/inventory.yml (git-ignored, holds the real IP)
+#   ansible-playbook -i rendered/ansible/inventory.yml ansible/playbook.yml
+all:
+  hosts:
+    k3s:
+      ansible_host: ${SECRET:IP_CLUSTER_NODE}
+      ansible_user: root
+  vars:
+    k3s_version: v1.35.5+k3s1
+    k3s_tls_san: ${SECRET:IP_CLUSTER_NODE}
+    argocd_namespace: argocd
+    argocd_chart_version: "9.5.21"          # appVersion v3.4.3
+    gitops_repo_url: https://github.com/sushistack/home-server-gitops.git

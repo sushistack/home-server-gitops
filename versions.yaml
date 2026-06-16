@@ -1,0 +1,17 @@
+# Pinned component versions — the GitOps-revertible single source of truth (NFR14).
+# Re-confirm the exact tags at install time; bump here (not ad-hoc on the host).
+
+k3s:
+  # Phase 1 single-node: SQLite datastore, k3s-bundled Traefik + local-path-provisioner.
+  # NOT v1.36 — stay on the 1.35 line (keeps etcd on the 3.5 series for Phase 2a).
+  # Installed WITHOUT --cluster-init (that would switch to embedded etcd — Phase 2a only).
+  version: v1.35.5+k3s1
+
+argocd:
+  # Helm chart whose appVersion is ArgoCD 3.4.x. Vendor chart referenced as a source — not mirrored.
+  repo: https://argoproj.github.io/argo-helm
+  chart: argo-cd
+  chartVersion: 9.5.21   # -> appVersion v3.4.3
+  appVersion: v3.4.3
+
+# Phase 2a (NOT this story — Epic 2): sealed-secrets, longhorn, cert-manager.

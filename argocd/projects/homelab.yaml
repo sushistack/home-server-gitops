@@ -1,0 +1,20 @@
+# AppProject for all homelab children (workloads + future infra). Single-tenant homelab:
+# wide-open resource whitelists; tighten per-namespace only if multi-tenant ever matters.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: homelab
+  namespace: argocd
+spec:
+  description: Homelab workloads and infra managed by the app-of-apps root.
+  sourceRepos:
+    - https://github.com/sushistack/home-server-gitops.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: '*'
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'

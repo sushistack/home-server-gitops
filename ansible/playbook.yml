@@ -1,0 +1,70 @@
+---
+# Host layer for Phase 1: install k3s + ArgoCD + inject the repo Secret.
+# Responsibility boundary ENDS just before the root-app sync — the single MANUAL line
+#   kubectl apply -f bootstrap/root-app.yaml
+# is NOT owned by Ansible (see the final comment).
+#
+# Token-free by design: real IPs come from rendered/ansible/inventory.yml; a repo
+# credential (only needed if a PRIVATE repo is ever added) comes from $ARGOCD_REPO_TOKEN.
+- name: Bootstrap Phase 1 k3s + ArgoCD
+  hosts: k3s
+  become: true
+  gather_facts: false
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  tasks:
+    - name: Install k3s server (SQLite datastore, bundled Traefik + local-path)
+      # NO --cluster-init (would switch to embedded etcd — Phase 2a only).
+      # NO --disable=traefik (Traefik stays k3s-owned via its HelmChart CR).
+      ansible.builtin.shell: |
+        curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION={{ k3s_version }} \
+          sh -s - server --tls-san {{ k3s_tls_san }}
+      args:
+        creates: /usr/local/bin/k3s
+
+    - name: Wait for the node to become Ready
+      ansible.builtin.command: k3s kubectl wait --for=condition=Ready node --all --timeout=180s
+      changed_when: false
+
+    - name: Install Helm
+      ansible.builtin.shell: |
+        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      args:
+        creates: /usr/local/bin/helm
+
+    - name: Install ArgoCD via Helm (idempotent)
+      ansible.builtin.shell: |
+        helm repo add argo https://argoproj.github.io/argo-helm
+        helm repo update argo
+        helm upgrade --install argocd argo/argo-cd \
+          --version {{ argocd_chart_version }} \
+          --namespace {{ argocd_namespace }} --create-namespace --wait --timeout 10m
+      changed_when: true
+
+    - name: Inject the ArgoCD repository Secret DIRECTLY (AR4 — never via Sealed Secrets)
+      # Public repo -> ArgoCD reads anonymously; this Secret registers it so `argocd repo list`
+      # shows it. If a PRIVATE repo is ever added, set ARGOCD_REPO_TOKEN — same direct-inject
+      # path, no circular dependency on a sealed-secrets controller that doesn't exist in Phase 1.
+      ansible.builtin.shell: |
+        k3s kubectl apply -f - <<'EOF'
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: repo-home-server-gitops
+          namespace: {{ argocd_namespace }}
+          labels:
+            argocd.argoproj.io/secret-type: repository
+        stringData:
+          type: git
+          url: {{ gitops_repo_url }}
+        {% if lookup('ansible.builtin.env', 'ARGOCD_REPO_TOKEN') %}
+          username: git
+          password: {{ lookup('ansible.builtin.env', 'ARGOCD_REPO_TOKEN') }}
+        {% endif %}
+        EOF
+      changed_when: true
+
+    # ── BOUNDARY ──────────────────────────────────────────────────────────────
+    # Ansible STOPS here. The next (manual) step is the single GitOps entry point:
+    #     k3s kubectl apply -f bootstrap/root-app.yaml
+    # Everything after it reconciles. Ansible owns nothing past this line.

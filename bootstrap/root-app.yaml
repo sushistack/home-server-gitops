@@ -1,0 +1,28 @@
+# THE single manual entry point: `kubectl apply -f bootstrap/root-app.yaml`.
+# Everything after this reconciles. App-of-apps root: recurses argocd/ and adopts
+# its children (AppProject + ApplicationSet). ArgoCD does NOT manage itself in Phase 1
+# (no Application points at ArgoCD — deferred to Story 2.1; AR5 sync-wave self-destroy risk).
+apiVersion: argoproj.io/v1alpha1   # stays v1alpha1 even on ArgoCD 3.x — do NOT "fix" this.
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/sushistack/home-server-gitops.git
+    targetRevision: HEAD
+    path: argocd
+    directory:
+      recurse: true          # picks up argocd/projects/* and argocd/applicationsets/*
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true   # AR7: required from the start, or large vendor CRDs later exceed client-side apply.
