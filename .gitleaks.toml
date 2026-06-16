@@ -22,23 +22,25 @@ tags = ["exposure", "ip"]
 [[rules]]
 id = "private-domain-elikr"
 description = "Private *.eli.kr domain — use a ${SECRET:DOMAIN_*} token"
-regex = '''\b[a-z0-9-]+\.eli\.kr\b'''
+# (?i): a capital letter must not slip the gate. (?:label\.)* also catches the bare apex `eli.kr`.
+regex = '''(?i)\b(?:[a-z0-9-]+\.)*eli\.kr\b'''
 tags = ["exposure", "domain"]
 
 [[rules]]
 id = "internal-hostname-tld"
 description = "Internal hostname (.local/.lan/.internal/.home) — use a ${SECRET:HOST_*} token"
-regex = '''\b[a-z0-9-]+\.(?:local|lan|internal|home)\b'''
+regex = '''(?i)\b[a-z0-9-]+\.(?:local|lan|internal|home)\b'''
 tags = ["exposure", "hostname"]
 
 # --- Allowlist ---
+# Only the token SHAPE is allowlisted. We deliberately do NOT exempt internal/tokens.example.env
+# by path: it is the file most likely to catch a fat-fingered real value, so it must be scanned
+# too (verified: a real IP planted there is now flagged). gitleaks always skips its own --config
+# file, so a path entry for it would be redundant; the "patterns, never literals" rule keeps this
+# file leak-free by construction.
 
 [allowlist]
-description = "Token shape is safe; scanner config + placeholder example self-reference are not leaks."
+description = "Token shape is safe; everything scannable — including the example env — is scanned."
 regexes = [
   '''\$\{SECRET:[A-Z_]+\}''',
-]
-paths = [
-  '''internal/tokens\.example\.env''',
-  '''\.gitleaks\.toml''',
 ]
