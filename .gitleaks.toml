@@ -1,0 +1,44 @@
+# Exposure gate — single source of truth for BOTH callers (pre-commit + CI).
+# Layer 1 (automatic): allowlist the ${SECRET:NAME} token shape, deny anything
+# that looks like a real address/host/secret but isn't a token.
+#
+# Denylist is expressed as PATTERNS, never as a literal list of the real house's
+# addresses — a literal list in a public file would itself be the leak.
+
+title = "home-server-gitops exposure gate"
+
+[extend]
+useDefault = true   # keep gitleaks' built-in secret rules; ours are additive
+
+# --- Denylist rules (the primary requirement) ---
+
+[[rules]]
+id = "raw-ipv4"
+description = "Raw IPv4 literal — use a ${SECRET:IP_*} token instead"
+# ponytail: also matches 4-part version strings / dotted dates; allowlist those if they ever appear
+regex = '''\b(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\b'''
+tags = ["exposure", "ip"]
+
+[[rules]]
+id = "private-domain-elikr"
+description = "Private *.eli.kr domain — use a ${SECRET:DOMAIN_*} token"
+regex = '''\b[a-z0-9-]+\.eli\.kr\b'''
+tags = ["exposure", "domain"]
+
+[[rules]]
+id = "internal-hostname-tld"
+description = "Internal hostname (.local/.lan/.internal/.home) — use a ${SECRET:HOST_*} token"
+regex = '''\b[a-z0-9-]+\.(?:local|lan|internal|home)\b'''
+tags = ["exposure", "hostname"]
+
+# --- Allowlist ---
+
+[allowlist]
+description = "Token shape is safe; scanner config + placeholder example self-reference are not leaks."
+regexes = [
+  '''\$\{SECRET:[A-Z_]+\}''',
+]
+paths = [
+  '''internal/tokens\.example\.env''',
+  '''\.gitleaks\.toml''',
+]

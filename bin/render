@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Render-time substitution: ${SECRET:NAME} -> real value from internal/tokens.env.
+
+Writes ONLY under rendered/ (git-ignored). No tracked file ever holds a real value.
+NB: ${SECRET:NAME} has a colon, so it is NOT valid `envsubst` syntax — hence this
+literal substitution loop instead of bare envsubst.
+
+Usage:  bin/render INPUT [INPUT ...]   # each INPUT -> rendered/INPUT
+        bin/render --selftest
+"""
+import re
+import sys
+import pathlib
+
+TOKENS = pathlib.Path("internal/tokens.env")
+OUTDIR = pathlib.Path("rendered")
+TOKEN_RE = re.compile(r"\$\{SECRET:([A-Z_]+)\}")
+
+
+def load_tokens(path):
+    vals = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        vals[k.strip()] = v.strip()
+    return vals
+
+
+def render(text, vals):
+    missing = []
+
+    def sub(m):
+        name = m.group(1)
+        if not vals.get(name):  # absent or empty
+            missing.append(name)
+            return m.group(0)
+        return vals[name]
+
+    return TOKEN_RE.sub(sub, text), missing
+
+
+def dest_for(src):
+    dest = OUTDIR / src
+    # guard: output MUST live under rendered/ (the git-ignored path)
+    assert dest == OUTDIR / src and (dest.parent == OUTDIR or OUTDIR in dest.parents), dest
+    return dest
+
+
+def main(argv):
+    if argv == ["--selftest"]:
+        return selftest()
+    if not argv:
+        sys.exit(__doc__)
+    if not TOKENS.exists():
+        sys.exit(f"missing {TOKENS} — copy internal/tokens.example.env and fill real values")
+    vals = load_tokens(TOKENS)
+    for inp in argv:
+        src = pathlib.Path(inp)
+        out, missing = render(src.read_text(), vals)
+        if missing:
+            sys.exit(f"{inp}: no value for {sorted(set(missing))}")
+        dest = dest_for(src)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(out)
+        print(dest)
+
+
+def selftest():
+    vals = {"HOST_PROXMOX": "real-host-01", "IP_LAN_GATEWAY": "10.x.x.x", "EMPTY": ""}
+    out, missing = render("server ${SECRET:HOST_PROXMOX} gw ${SECRET:IP_LAN_GATEWAY}", vals)
+    assert out == "server real-host-01 gw 10.x.x.x", out
+    assert missing == [], missing
+    # unfilled token is reported, not silently dropped
+    _, missing = render("${SECRET:MISSING} ${SECRET:EMPTY}", vals)
+    assert set(missing) == {"MISSING", "EMPTY"}, missing
+    # colon syntax: a plain $VAR / ${VAR} (envsubst-style) is left untouched
+    out, _ = render("$HOST_PROXMOX ${HOST_PROXMOX}", vals)
+    assert out == "$HOST_PROXMOX ${HOST_PROXMOX}", out
+    # output path is forced under rendered/
+    assert dest_for(pathlib.Path("infra/x.yaml")) == OUTDIR / "infra/x.yaml"
+    print("selftest ok")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

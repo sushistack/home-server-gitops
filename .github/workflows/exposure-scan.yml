@@ -1,0 +1,24 @@
+name: exposure-scan
+
+# Caller #2 of the exposure gate: scans the FULL git history (AC2 — a leak in ANY
+# past commit fails the PR, not just the working tree). Same gitleaks + same
+# .gitleaks.toml as the pre-commit hook, so the two callers never diverge.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history — `gitleaks detect` walks every commit
+
+      - name: gitleaks (full history)
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.18.4 \
+            detect --source /repo --config /repo/.gitleaks.toml --redact --verbose
+          # --redact: never echo a leaked value into the public CI log.
+          # `detect` exits non-zero on any finding -> the job (and PR) fails.

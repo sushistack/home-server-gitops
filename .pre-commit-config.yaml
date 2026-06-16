@@ -1,0 +1,8 @@
+# Caller #1 of the exposure gate: blocks a local commit on a hit (working tree).
+# Same scanner + same .gitleaks.toml as CI (caller #2) so they never diverge.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+        args: ["--config", ".gitleaks.toml"]

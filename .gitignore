@@ -1,0 +1,17 @@
+# Public-default repo: real values NEVER tracked. Tracked files hold ${SECRET:NAME} tokens only.
+
+# Everything under internal/ is git-ignored...
+internal/*
+
+# Real secret/value files anywhere.
+*.env
+tokens.env
+
+# Render-time output (real values injected here only — never tracked).
+rendered/
+*.rendered.yaml
+*.rendered.yml
+
+# ...EXCEPT the committed placeholder example. Negation MUST come last — otherwise the
+# `*.env` rule above would re-ignore it (last matching pattern wins).
+!internal/tokens.example.env
