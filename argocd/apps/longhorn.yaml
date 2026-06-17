@@ -37,6 +37,11 @@ spec:
           defaultDataEngine: v1
           v2DataEngine: false       # belt to the suspenders above: keep V2 disabled entirely, not just non-default
           defaultReplicaCount: 3    # cluster-wide default == the SC's defaultClassReplicaCount (docs assert "3" everywhere)
+          # On UNPLANNED node-down the workload pod gets stuck Terminating and the RWO volume stays
+          # attached to the dead node, blocking reschedule. Force-delete the stuck pod so the volume
+          # detaches + re-attaches on a healthy node — the AC2 self-heal proof (Story 2.5 / FR7 / NFR3).
+          # Chart default is `do-nothing` (volume never moves). [Longhorn v1.12, AR6]
+          nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
         persistence:
           # Let the chart own the `longhorn` StorageClass so it stays GitOps-managed
           # (prefer this over a hand-written SC). Default class for the cluster, but real
