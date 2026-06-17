@@ -82,6 +82,7 @@
           password: {{ lookup('ansible.builtin.env', 'ARGOCD_REPO_TOKEN') }}
         {% endif %}
         EOF
+      no_log: true   # ARGOCD_REPO_TOKEN is interpolated into this task — keep it out of logs / -v output
       changed_when: true
 
     # ── BOUNDARY ──────────────────────────────────────────────────────────────
