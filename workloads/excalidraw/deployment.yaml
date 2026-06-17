@@ -20,7 +20,7 @@ spec:
           # Pinned by digest: excalidraw/excalidraw publishes only :latest (no semver).
           # index sha256 captured 2026-06-17 via `docker buildx imagetools inspect excalidraw/excalidraw:latest`.
           # Upgrade = re-inspect, bump this digest via PR (GitOps-revertible).
-          image: excalidraw/excalidraw@sha256:4542f30bea392b833822d0e7db4fa2220e6706ca962c082add2665159fa91758
+          image: excalidraw/excalidraw:does-not-exist-bad-pin
           ports:
             - containerPort: 80
           env:
