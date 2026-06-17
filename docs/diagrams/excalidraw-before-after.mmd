@@ -1,0 +1,21 @@
+%% Excalidraw: Docker Compose host -> ArgoCD-reconciled k3s (Phase 1).
+%% Role-based logical names ONLY — no real hostnames, IPs, or domains (AR35 + exposure gate).
+%% Source of truth for docs/diagrams/excalidraw-before-after.svg (re-render after edits).
+flowchart LR
+  subgraph before["BEFORE — Docker Compose"]
+    direction TB
+    op1["Operator"] -->|"manual: docker compose up<br/>(imperative, on the box)"| chost["Compose host"]
+    chost --> cex["Excalidraw container"]
+  end
+
+  subgraph after["AFTER — GitOps on k3s"]
+    direction TB
+    op2["Operator"] -->|"git push (declarative)"| git["Git repo<br/>(source of truth)"]
+    git -->|"auto-sync + health gate<br/>reconcile / git revert"| argo["ArgoCD"]
+    argo --> node["k3s node"]
+    node --> pod["Excalidraw pod"]
+    tunnel["Public tunnel"] --> node
+    cm["cert-manager<br/>(staging TLS)"] -.-> pod
+  end
+
+  before ==>|"Story 1.1–1.6 cut-over"| after

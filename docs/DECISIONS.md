@@ -2,6 +2,22 @@
 
 Running log of load-bearing decisions. One line each; link the story.
 
+## Documentation-as-product (Story 1.6)
+
+- **Two seed ADRs against the fixed template** ([ADR-0001](adr/ADR-0001-why-compose-to-k3s.md)
+  Compose → k3s; [ADR-0002](adr/ADR-0002-excalidraw-phase1-pilot.md) Excalidraw as the
+  throwaway Phase-1 pilot). Template is frozen — Context / Decision / Consequences /
+  Rejected alternatives / Exposure note + `Affected services:` — because ≥15 ADRs will
+  use it and retemplating is expensive. (AR33)
+- **ADR↔README links are bidirectional, enforced by `adr-link-check` CI**
+  (`bin/adr-link-check`, a repo-local script — no link-checker dependency). The CI triad
+  is now exposure-scan + manifest-lint + adr-link-check. (AR37)
+- **Diagrams: commit BOTH Mermaid source AND exported SVG; PNG forbidden.** Role-based
+  logical names only — the SVG text is scanner-readable, raster is not. (AR35)
+- **README first screen is fixed-shape and first-class:** one sentence → before/after
+  diagram → demo clip → ADR links, with a first-class "what was deliberately excluded"
+  section. Not an end-of-project chore. (FR30, FR31)
+
 ## TLS / cert-manager (Story 1.5)
 
 - **Phase 1 certs are NON-PRODUCTION and THROWAWAY.** The draw host (`${SECRET:DOMAIN_DRAW}`)

@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Bidirectional ADR <-> README link check (AR37) — a repo-local script, no dependency.
+
+Fails when a link is broken in EITHER direction:
+  1. an ADR (docs/adr/ADR-*.md) the README does not link to, or
+  2. an ADR that does not link back to the README, or
+  3. a README link into docs/adr/ that points to a file that does not exist.
+
+Usage:  bin/adr-link-check [--selftest]
+"""
+import re
+import sys
+import pathlib
+
+LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+ADR_GLOB = "ADR-*.md"
+
+
+def links_in(text):
+    """Markdown link targets, anchors and whitespace stripped."""
+    return [m.group(1).split("#", 1)[0].strip() for m in LINK_RE.finditer(text)]
+
+
+def resolve(from_file, target):
+    """Absolute path a relative link resolves to (None for external/empty)."""
+    if not target or "://" in target:
+        return None
+    return (from_file.parent / target).resolve()
+
+
+def check(repo):
+    repo = pathlib.Path(repo).resolve()
+    readme = repo / "README.md"
+    adr_dir = repo / "docs" / "adr"
+    errors = []
+
+    if not readme.exists():
+        return [f"README.md not found at {readme}"]
+    adrs = sorted(adr_dir.glob(ADR_GLOB)) if adr_dir.exists() else []
+
+    readme_targets = {resolve(readme, t) for t in links_in(readme.read_text())}
+    readme_targets.discard(None)
+
+    # Direction A: README links every ADR; Direction B: every ADR links README.
+    for adr in adrs:
+        if adr.resolve() not in readme_targets:
+            errors.append(f"README.md does not link to {adr.relative_to(repo)}")
+        adr_targets = {resolve(adr, t) for t in links_in(adr.read_text())}
+        if readme.resolve() not in adr_targets:
+            errors.append(f"{adr.relative_to(repo)} has no back-reference to README.md")
+
+    # Dangling: a README link into docs/adr/ pointing at a missing file.
+    for t in links_in(readme.read_text()):
+        dest = resolve(readme, t)
+        if dest is None:
+            continue
+        if adr_dir.resolve() in dest.parents and dest.suffix == ".md" and not dest.exists():
+            errors.append(f"README.md links to missing ADR {t}")
+
+    return errors
+
+
+def main(argv):
+    if argv == ["--selftest"]:
+        return selftest()
+    errors = check(".")
+    if errors:
+        print("adr-link-check FAILED:")
+        for e in errors:
+            print(f"  - {e}")
+        sys.exit(1)
+    print("adr-link-check ok")
+
+
+def selftest():
+    import tempfile
+
+    def build(tmp, readme_body, adr_body):
+        root = pathlib.Path(tmp)
+        (root / "docs" / "adr").mkdir(parents=True)
+        (root / "README.md").write_text(readme_body)
+        (root / "docs" / "adr" / "ADR-0001-x.md").write_text(adr_body)
+        return root
+
+    good_readme = "see [ADR-0001](docs/adr/ADR-0001-x.md)\n"
+    good_adr = "back: [README](../../README.md)\n"
+
+    with tempfile.TemporaryDirectory() as tmp:        # both directions present -> pass
+        assert check(build(tmp, good_readme, good_adr)) == [], "linked pair must pass"
+    with tempfile.TemporaryDirectory() as tmp:        # README side deleted -> fail
+        errs = check(build(tmp, "no links here\n", good_adr))
+        assert any("does not link" in e for e in errs), errs
+    with tempfile.TemporaryDirectory() as tmp:        # ADR back-ref deleted -> fail
+        errs = check(build(tmp, good_readme, "no back ref\n"))
+        assert any("back-reference" in e for e in errs), errs
+    with tempfile.TemporaryDirectory() as tmp:        # README points at missing ADR -> fail
+        errs = check(build(tmp, "[x](docs/adr/ADR-9999-missing.md)\n" + good_readme, good_adr))
+        assert any("missing ADR" in e for e in errs), errs
+    print("selftest ok")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

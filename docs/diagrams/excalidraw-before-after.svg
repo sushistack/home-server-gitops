@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 420" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="14">
+  <!-- Excalidraw: Compose host -> ArgoCD-reconciled k3s (Phase 1). Hand-exported from
+       excalidraw-before-after.mmd. Role-based logical names only — no real host/IP/domain. -->
+  <style>
+    .box{fill:#f4f6fb;stroke:#5b6b8c;stroke-width:1.5;rx:8;}
+    .panel{fill:#ffffff;stroke:#9aa7c0;stroke-width:1.5;stroke-dasharray:4 3;rx:10;}
+    .lbl{fill:#1f2937;}
+    .title{fill:#334155;font-weight:700;font-size:15px;}
+    .edge{stroke:#5b6b8c;stroke-width:1.5;fill:none;}
+    .edgetxt{fill:#475569;font-size:11.5px;}
+    .dash{stroke:#5b6b8c;stroke-width:1.5;fill:none;stroke-dasharray:5 4;}
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#5b6b8c"/>
+    </marker>
+  </defs>
+
+  <!-- BEFORE panel -->
+  <rect class="panel" x="20" y="20" width="300" height="380" rx="10"/>
+  <text class="title" x="40" y="48">BEFORE — Docker Compose</text>
+
+  <rect class="box" x="90" y="70" width="160" height="44" rx="8"/>
+  <text class="lbl" x="170" y="97" text-anchor="middle">Operator</text>
+
+  <path class="edge" d="M170,114 L170,170" marker-end="url(#arrow)"/>
+  <text class="edgetxt" x="178" y="135">manual:</text>
+  <text class="edgetxt" x="178" y="150">docker compose up</text>
+  <text class="edgetxt" x="178" y="165">(imperative)</text>
+
+  <rect class="box" x="90" y="172" width="160" height="44" rx="8"/>
+  <text class="lbl" x="170" y="199" text-anchor="middle">Compose host</text>
+
+  <path class="edge" d="M170,216 L170,262" marker-end="url(#arrow)"/>
+
+  <rect class="box" x="70" y="264" width="200" height="44" rx="8"/>
+  <text class="lbl" x="170" y="291" text-anchor="middle">Excalidraw container</text>
+
+  <!-- cut-over arrow -->
+  <path class="edge" d="M320,210 L380,210" stroke-width="3" marker-end="url(#arrow)"/>
+  <text class="edgetxt" x="324" y="200">Story 1.1–1.6</text>
+  <text class="edgetxt" x="334" y="228">cut-over</text>
+
+  <!-- AFTER panel -->
+  <rect class="panel" x="390" y="20" width="490" height="380" rx="10"/>
+  <text class="title" x="410" y="48">AFTER — GitOps on k3s</text>
+
+  <rect class="box" x="430" y="70" width="150" height="40" rx="8"/>
+  <text class="lbl" x="505" y="95" text-anchor="middle">Operator</text>
+
+  <path class="edge" d="M505,110 L505,150" marker-end="url(#arrow)"/>
+  <text class="edgetxt" x="513" y="134">git push (declarative)</text>
+
+  <rect class="box" x="430" y="152" width="150" height="48" rx="8"/>
+  <text class="lbl" x="505" y="173" text-anchor="middle">Git repo</text>
+  <text class="edgetxt" x="505" y="190" text-anchor="middle">(source of truth)</text>
+
+  <path class="edge" d="M505,200 L505,242" marker-end="url(#arrow)"/>
+  <text class="edgetxt" x="513" y="218">auto-sync + health gate</text>
+  <text class="edgetxt" x="513" y="233">reconcile / git revert</text>
+
+  <rect class="box" x="430" y="244" width="150" height="40" rx="8"/>
+  <text class="lbl" x="505" y="269" text-anchor="middle">ArgoCD</text>
+
+  <path class="edge" d="M505,284 L505,322" marker-end="url(#arrow)"/>
+
+  <rect class="box" x="430" y="324" width="150" height="40" rx="8"/>
+  <text class="lbl" x="505" y="349" text-anchor="middle">k3s node</text>
+
+  <rect class="box" x="660" y="324" width="180" height="40" rx="8"/>
+  <text class="lbl" x="750" y="349" text-anchor="middle">Excalidraw pod</text>
+  <path class="edge" d="M580,344 L660,344" marker-end="url(#arrow)"/>
+
+  <rect class="box" x="660" y="244" width="180" height="40" rx="8"/>
+  <text class="lbl" x="750" y="269" text-anchor="middle">Public tunnel</text>
+  <path class="edge" d="M660,264 L582,320" marker-end="url(#arrow)"/>
+
+  <rect class="box" x="660" y="70" width="180" height="48" rx="8"/>
+  <text class="lbl" x="750" y="91" text-anchor="middle">cert-manager</text>
+  <text class="edgetxt" x="750" y="108" text-anchor="middle">(staging TLS)</text>
+  <path class="dash" d="M750,118 L750,324" marker-end="url(#arrow)"/>
+</svg>

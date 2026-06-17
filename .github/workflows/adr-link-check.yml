@@ -1,0 +1,17 @@
+name: adr-link-check
+
+# Third caller of the CI triad (exposure-scan + manifest-lint + adr-link-check, AR37).
+# Fails the PR on a broken bidirectional ADR<->README link in either direction.
+# The check is a repo-local script (bin/adr-link-check) — no link-checker dependency.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  adr-link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: bidirectional ADR <-> README link check
+        run: python3 bin/adr-link-check
