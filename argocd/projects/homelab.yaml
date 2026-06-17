@@ -9,6 +9,7 @@ spec:
   description: Homelab workloads and infra managed by the app-of-apps root.
   sourceRepos:
     - https://github.com/sushistack/home-server-gitops.git
+    - https://charts.jetstack.io   # Story 1.5: cert-manager Helm chart (vendor repo referenced as a source)
   destinations:
     - server: https://kubernetes.default.svc
       namespace: '*'
