@@ -1,0 +1,108 @@
+# ArgoCD Helm values — render CMP (Config Management Plugin).
+#
+# WHY THIS EXISTS (Story 1.4): ArgoCD syncs the RAW tracked files from this public repo,
+# but sensitive values (ingress hosts, …) may only appear as ${SECRET:NAME} tokens — the
+# literal is blocked by the exposure gate. Without substitution at sync time, ArgoCD would
+# push the literal token string into the cluster (e.g. Traefik would match the string
+# "${SECRET:DOMAIN_DRAW}" instead of the real host). This CMP renders tokens during
+# `generate`, exactly like bin/render does locally — closing that gap uniformly for every
+# workload (Epic 4 cutovers all route a real host through ArgoCD and hit the same wall).
+#
+# Mechanism: a sidecar (argocd-cmp-server) on the argocd image (kustomize present; no python3,
+# so the in-cluster render is POSIX sh, not bin/render). It DISCOVERS any workloads/* dir with
+# a kustomization.yaml, runs `kustomize build . | render-stdin.sh`, and substitutes tokens from
+# a bootstrap-injected Secret (argocd-render-tokens). Token-free manifests pass through unchanged
+# (render is a no-op), and the argocd/ recurse dir (no kustomization.yaml) is left on built-in.
+#
+# Rollback: `helm upgrade` without this values file (or revert it) drops the sidecar; ArgoCD
+# falls back to built-in kustomize for all workloads.
+
+repoServer:
+  extraContainers:
+    - name: cmp-render
+      image: quay.io/argoproj/argocd:v3.4.3   # reuse the argocd image: kustomize + argocd-cmp-server present, no custom build
+      command: ["/var/run/argocd/argocd-cmp-server"]
+      env:
+        - name: RENDER_TOKENS
+          value: /render/tokens/tokens.env
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        seccompProfile:
+          type: RuntimeDefault
+      volumeMounts:
+        # var-files + plugins are already provided to the repo-server by the chart (copyutil
+        # stages the argocd-cmp-server binary; plugins is the shared CMP socket dir).
+        - name: var-files
+          mountPath: /var/run/argocd
+        - name: plugins
+          mountPath: /home/argocd/cmp-server/plugins
+        - name: tmp
+          mountPath: /tmp
+        - name: cmp-render-config
+          mountPath: /home/argocd/cmp-server/config/plugin.yaml
+          subPath: plugin.yaml
+        - name: cmp-render-config
+          mountPath: /render/bin/render-stdin.sh
+          subPath: render-stdin.sh
+        - name: render-tokens
+          mountPath: /render/tokens
+          readOnly: true
+  volumes:
+    - name: cmp-render-config
+      configMap:
+        name: argocd-cmp-render
+        defaultMode: 0555
+    - name: render-tokens
+      secret:
+        secretName: argocd-render-tokens
+        optional: true   # bootstrap-injected out-of-band; a token-free cluster still starts
+
+# The plugin config + the render filter, shipped as one ConfigMap mounted into the sidecar.
+extraObjects:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: argocd-cmp-render
+      namespace: argocd
+    data:
+      plugin.yaml: |
+        apiVersion: argoproj.io/v1alpha1
+        kind: ConfigManagementPlugin
+        metadata:
+          name: render
+        spec:
+          version: v1.0
+          generate:
+            command: ["/bin/sh", "-c", "kustomize build . | /bin/sh /render/bin/render-stdin.sh"]
+          discover:
+            # Match any kustomize dir (all workloads/*). argocd/ has no kustomization.yaml ->
+            # empty output -> not matched -> root app stays on built-in directory/recurse mode.
+            find:
+              command: ["/bin/sh", "-c", "find . -maxdepth 2 -name kustomization.yaml"]
+      render-stdin.sh: |
+        #!/bin/sh
+        # In-cluster twin of bin/render (the argocd image has no python3). Substitute
+        # ${SECRET:NAME} from $RENDER_TOKENS (a KEY=VALUE file) into stdin -> stdout, and
+        # FAIL on any unresolved token so a broken literal never reaches the cluster.
+        # ponytail: sed '|' delimiter -> token VALUES must not contain '|' (hosts/IPs don't).
+        set -eu
+        tokens="${RENDER_TOKENS:-/render/tokens/tokens.env}"
+        out=$(cat)
+        if [ -f "$tokens" ]; then
+          while IFS='=' read -r k v || [ -n "$k" ]; do
+            case "$k" in ''|\#*) continue ;; esac
+            k=$(printf '%s' "$k" | tr -d '[:space:]')
+            [ -n "$k" ] || continue
+            out=$(printf '%s' "$out" | sed "s|\${SECRET:${k}}|${v}|g")
+          done < "$tokens"
+        fi
+        if printf '%s' "$out" | grep -q '\${SECRET:'; then
+          stray=$(printf '%s' "$out" | grep -o '\${SECRET:[^}]*}' | sort -u | tr '\n' ' ')
+          echo "render: unresolved token(s): ${stray}" >&2
+          exit 1
+        fi
+        printf '%s\n' "$out"

@@ -49,14 +49,43 @@
         executable: /bin/bash
         creates: /usr/local/bin/helm
 
-    - name: Install ArgoCD via Helm (idempotent)
+    - name: Stage the render-token file on the node (real values; from the operator's git-ignored tokens.env)
+      # The render CMP (argocd-values.yaml) substitutes ${SECRET:NAME} in workloads at sync time;
+      # it reads these real values from a Secret. tokens.env is the SSOT (controller-side, git-ignored).
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../internal/tokens.env"
+        dest: /tmp/render-tokens.env
+        mode: '0600'
+      no_log: true
+
+    - name: Inject the render-token Secret DIRECTLY (bootstrap-class, like the repo Secret — never via Sealed Secrets)
+      ansible.builtin.shell: |
+        set -o pipefail
+        k3s kubectl create secret generic argocd-render-tokens \
+          --namespace {{ argocd_namespace }} \
+          --from-file=tokens.env=/tmp/render-tokens.env \
+          --dry-run=client -o yaml | k3s kubectl apply -f -
+        rm -f /tmp/render-tokens.env
+      args:
+        executable: /bin/bash
+      no_log: true
+      changed_when: true
+
+    - name: Stage the ArgoCD Helm values (render CMP sidecar) on the node
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/argocd-values.yaml"
+        dest: /tmp/argocd-values.yaml
+        mode: '0644'
+
+    - name: Install ArgoCD via Helm (idempotent; render CMP sidecar from argocd-values.yaml)
       ansible.builtin.shell: |
         set -o pipefail
         helm repo add argo https://argoproj.github.io/argo-helm
         helm repo update argo
         helm upgrade --install argocd argo/argo-cd \
           --version {{ argocd.chartVersion }} \
-          --namespace {{ argocd_namespace }} --create-namespace --wait --timeout 10m
+          --namespace {{ argocd_namespace }} --create-namespace \
+          -f /tmp/argocd-values.yaml --wait --timeout 10m
       args:
         executable: /bin/bash
       changed_when: true
