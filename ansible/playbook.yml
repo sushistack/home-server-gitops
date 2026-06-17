@@ -56,15 +56,17 @@
       # If multipath-tools is genuinely absent the unit may not exist; that is already the desired state.
       failed_when: false
 
-    - name: Belt-and-suspenders — blacklist block devices in /etc/multipath.conf
-      # In case multipath-tools is ever reinstalled and unmasked, this stops it grabbing sd* devices.
+    - name: Belt-and-suspenders — blacklist ALL block devices in /etc/multipath.conf
+      # In case multipath-tools is ever reinstalled and unmasked, this stops it grabbing ANY device.
       ansible.builtin.copy:
         dest: /etc/multipath.conf
         mode: '0644'
         content: |
-          # Managed by Ansible (Story 2.2). multipathd must NOT claim Longhorn block devices.
+          # Managed by Ansible (Story 2.2). This node never uses multipathd, so blacklist EVERY
+          # device — a narrow `^sd…` regex misses the Proxmox virtio disk names (`vd*`) and NVMe
+          # (`nvme*`) the Longhorn data device may actually use, leaving it unprotected.
           blacklist {
-              devnode "^sd[a-z0-9]+"
+              devnode "^.*"
           }
 
 - name: Play 1 — initialize etcd on node 1 (--cluster-init)
@@ -198,20 +200,26 @@
       # default on every fresh k3s install, so this MUST live in the bootstrap layer, not as a
       # one-off kubectl). local-path was the Phase-1-only throwaway provisioner; Longhorn is the
       # Phase-2a default. The SC exists shortly after k3s starts — wait for it, then patch idempotently.
+      # CAVEAT: an in-place k3s UPGRADE re-applies the bundled local-storage manifest and can re-stamp
+      # local-path as default again — re-run this playbook after a k3s version bump to re-assert.
       ansible.builtin.shell: |
-        set -eo pipefail
+        set -o pipefail   # NOT -e: a transient patch failure must retry the loop, not abort the task
         for _ in $(seq 1 18); do
           if k3s kubectl get storageclass local-path >/dev/null 2>&1; then
-            k3s kubectl patch storageclass local-path \
-              -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
-            exit 0
+            if k3s kubectl patch storageclass local-path \
+                 -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'; then
+              exit 0
+            fi
           fi
           sleep 5
         done
-        echo "local-path StorageClass never appeared" >&2; exit 1
+        echo "local-path StorageClass never appeared (or patch never succeeded)" >&2; exit 1
       args:
         executable: /bin/bash
-      changed_when: true
+      register: localpath_patch
+      # kubectl prints "… patched (no change)" when the annotation is already set — honour the
+      # playbook's "re-running converges" contract instead of always reporting CHANGED.
+      changed_when: "'(no change)' not in localpath_patch.stdout"
 
     - name: Install Helm (installer pinned to a tag, not main — reproducible)
       ansible.builtin.shell: |
