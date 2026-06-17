@@ -78,10 +78,11 @@ Running log of load-bearing decisions. One line each; link the story.
 
 ## TLS / cert-manager (Story 1.5)
 
-- **Phase 1 certs are NON-PRODUCTION and THROWAWAY.** The draw host (`${SECRET:DOMAIN_DRAW}`)
-  is served from a `letsencrypt-staging` ClusterIssuer (LE staging + Cloudflare DNS-01). These certs are
+- **Phase 1 certs were NON-PRODUCTION and THROWAWAY.** (Superseded by the Story 2.4 promotion
+  above; kept as the historical Phase-1 record.) The draw host (`${SECRET:DOMAIN_DRAW}`)
+  was served from a `letsencrypt-staging` ClusterIssuer (LE staging + Cloudflare DNS-01). Those certs were
   browser-untrusted (staging chains to a fake root) and, with the `excalidraw-tls` Secret and
-  any sealing assets, **do NOT carry to the Phase 2a clean cluster** — Story 2.4 re-issues real
+  any sealing assets, **did NOT carry to the Phase 2a clean cluster** — Story 2.4 re-issued real
   DNS-01 **production** certs against a fresh ClusterIssuer on a new cluster. (AR8, AR9)
 - **Staging → prod swap point** is `workloads/excalidraw/certificate.yaml` +
   `infra/cluster-issuer/clusterissuer.yaml`: promotion is a one-line ACME-URL swap

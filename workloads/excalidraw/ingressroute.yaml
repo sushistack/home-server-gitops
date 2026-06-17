@@ -5,9 +5,10 @@
 # Host is tokenized (${SECRET:DOMAIN_DRAW}); the render CMP substitutes at ArgoCD sync time
 # (see ansible/argocd-values.yaml). traefik.io/v1alpha1 (v3) — old traefik.containo.us silently fails.
 #
-# OPERATOR NOTE (live, no file): the cloudflared tunnel origin for draw — set to http://<node>:80
-# in Story 1.4 — must be repointed to https://<node>:443 (noTLSVerify, staging cert) or the
-# :80 redirect below loops the CF path. LAN clients hit :80 and follow the redirect to :443.
+# OPERATOR NOTE (live, no file): the cloudflared tunnel origin for draw points at https://<node>:443
+# (Story 2.4: No-TLS-Verify OFF + originServerName=<draw host>, now the origin cert is real LE-prod —
+# was noTLSVerify+staging cert in 1.5) or the :80 redirect below loops the CF path. LAN clients hit
+# :80 and follow the redirect to :443.
 ---
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
