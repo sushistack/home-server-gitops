@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+
+# Use `labels:` (newer field), NEVER commonLabels (pollutes selectors -> immutable conflict)
+# and NEVER namePrefix (breaks the name+ns binding SealedSecrets are sealed against).
+# includeSelectors: false keeps these out of spec.selector / matchLabels (hand-written above).
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/name: excalidraw
+      app.kubernetes.io/instance: excalidraw
+      app.kubernetes.io/part-of: excalidraw
+      app.kubernetes.io/managed-by: argocd
+      app.kubernetes.io/component: app

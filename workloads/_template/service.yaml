@@ -1,0 +1,13 @@
+# GOLDEN PATH TEMPLATE. Fill: __SERVICE__, __PORT__ (replace the 80s with the container port).
+apiVersion: v1
+kind: Service
+metadata:
+  name: __SERVICE__
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: __SERVICE__
+  ports:
+    - name: http
+      port: 80 # __PORT__
+      targetPort: 80 # __PORT__

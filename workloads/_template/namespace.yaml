@@ -1,0 +1,6 @@
+# GOLDEN PATH TEMPLATE — copy this whole dir to workloads/<service>/ and fill placeholders.
+# __SERVICE__ -> the logical service name (also the namespace, the Application name, all labels).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: __SERVICE__

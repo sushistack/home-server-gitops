@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Only the three core resources are built/linted/deployed. backup-cronjob.yaml and
+# application.yaml are STUBS (carry guidance, not deployable) — kept OUT of resources on purpose.
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+
+# Replace __SERVICE__ in every value below when copying. Use `labels:` (never commonLabels/namePrefix).
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/name: __SERVICE__
+      app.kubernetes.io/instance: __SERVICE__
+      app.kubernetes.io/part-of: __SERVICE__
+      app.kubernetes.io/managed-by: argocd
+      app.kubernetes.io/component: app

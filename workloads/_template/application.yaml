@@ -1,0 +1,28 @@
+# APPLICATION STUB — NOT a deployable resource (deliberately excluded from kustomization.yaml).
+#
+# Most services flow through the `workloads` ApplicationSet automatically — you DO NOT need this.
+# Use this ONLY for a hand-written exception that the directory generator can't express
+# (e.g. Anytype: non-HTTP, multi-source, or a bespoke syncPolicy). Then move it to
+# argocd/applications/<service>.yaml and add the path to the ApplicationSet exclude list.
+#
+# apiVersion: argoproj.io/v1alpha1
+# kind: Application
+# metadata:
+#   name: __SERVICE__
+#   namespace: argocd
+# spec:
+#   project: homelab
+#   source:
+#     repoURL: https://github.com/sushistack/home-server-gitops.git
+#     targetRevision: HEAD
+#     path: workloads/__SERVICE__
+#   destination:
+#     server: https://kubernetes.default.svc
+#     namespace: __SERVICE__
+#   syncPolicy:
+#     automated:
+#       prune: true
+#       selfHeal: true
+#     syncOptions:
+#       - CreateNamespace=true
+#       - ServerSideApply=true

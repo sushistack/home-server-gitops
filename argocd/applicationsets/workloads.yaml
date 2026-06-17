@@ -16,6 +16,10 @@ spec:
         revision: HEAD
         directories:
           - path: workloads/*
+          # _template/ is the copy-to-fill golden path, NOT a deployable service.
+          # Without this exclude the generator creates a never-syncable Application for it.
+          - path: workloads/_template
+            exclude: true
   template:
     metadata:
       name: '{{.path.basename}}'

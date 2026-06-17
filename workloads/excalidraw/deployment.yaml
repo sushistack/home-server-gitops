@@ -1,0 +1,42 @@
+# Excalidraw — whiteboard / diagrams. Ported from configs/docker (home.server) compose.
+# Stateless / Disposable: no volumes, no PVC, no backup CronJob (architecture.md criticality grade).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: excalidraw
+spec:
+  replicas: 1
+  # Selector is hand-written (NOT from kustomize labels) so it stays immutable across re-applies.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: excalidraw
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: excalidraw
+    spec:
+      containers:
+        - name: excalidraw
+          # Pinned by digest: excalidraw/excalidraw publishes only :latest (no semver).
+          # index sha256 captured 2026-06-17 via `docker buildx imagetools inspect excalidraw/excalidraw:latest`.
+          # Upgrade = re-inspect, bump this digest via PR (GitOps-revertible).
+          image: excalidraw/excalidraw@sha256:f7ee194addd607bf831d2af0f0a34463dd4225e426cf35199ef0b12a803398e9
+          ports:
+            - containerPort: 80
+          env:
+            - name: TZ
+              value: Asia/Seoul
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              # Memory limit only — NO cpu limit (a cpu limit causes CFS throttling).
+              memory: 256Mi
+          # Ports the Compose `nc -z localhost 80` TCP-listen check (AR31).
+          readinessProbe:
+            tcpSocket:
+              port: 80
+          livenessProbe:
+            tcpSocket:
+              port: 80

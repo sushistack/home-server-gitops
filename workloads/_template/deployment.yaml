@@ -1,0 +1,39 @@
+# GOLDEN PATH TEMPLATE. Fill: __SERVICE__, __IMAGE__ (pin by digest), __PORT__ (replace the 80s).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: __SERVICE__
+spec:
+  replicas: 1
+  # Hand-written selector (kept out of kustomize labels) so it stays immutable across re-applies.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: __SERVICE__
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: __SERVICE__
+    spec:
+      containers:
+        - name: __SERVICE__
+          # __IMAGE__ — ALWAYS pin by digest (repo@sha256:...) or exact tag. NEVER :latest.
+          image: __IMAGE__
+          ports:
+            - containerPort: 80 # __PORT__
+          env:
+            - name: TZ
+              value: Asia/Seoul
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              # Memory limit only — NO cpu limit (avoids CFS throttling). Re-tier per service.
+              memory: 256Mi
+          # Default health gate = TCP listen. Swap to httpGet /healthz if the service has one.
+          readinessProbe:
+            tcpSocket:
+              port: 80 # __PORT__
+          livenessProbe:
+            tcpSocket:
+              port: 80 # __PORT__

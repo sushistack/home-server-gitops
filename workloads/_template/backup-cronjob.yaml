@@ -1,0 +1,40 @@
+# BACKUP CRONJOB STUB — NOT a deployable resource (deliberately excluded from kustomization.yaml).
+#
+# Stateless / Disposable service (no PVC)? DELETE this file — no backup job needed.
+# Stateful service? Uncomment, fill placeholders, ADD this file to kustomization.yaml resources.
+#
+# Choose the backup method by data class (architecture.md AR16/AR17):
+#   - File-class / snapshot   -> tar|rsync the PVC mount to R2.
+#   - SQLite                  -> `sqlite3 db .dump` (or .backup) -> R2.
+#   - Postgres / MySQL        -> pg_dump / mysqldump -> R2.
+#   - BadgerDB / non-quiescent-> quiesce or snapshot, then copy.
+# Destination credential = a PER-NAMESPACE R2 SealedSecret (one slot per service; never shared).
+#
+# apiVersion: batch/v1
+# kind: CronJob
+# metadata:
+#   name: __SERVICE__-backup
+# spec:
+#   schedule: "0 3 * * *"            # nightly 03:00 Asia/Seoul
+#   timeZone: Asia/Seoul
+#   concurrencyPolicy: Forbid
+#   jobTemplate:
+#     spec:
+#       template:
+#         spec:
+#           restartPolicy: OnFailure
+#           containers:
+#             - name: backup
+#               image: __BACKUP_IMAGE__        # e.g. an rclone/restic image, pinned by digest
+#               command: ["/bin/sh", "-c", "echo TODO: dump __SERVICE__ data && rclone copy ... r2:__SERVICE__/"]
+#               envFrom:
+#                 - secretRef:
+#                     name: __SERVICE__-r2     # per-namespace R2 SealedSecret (sealed to name+ns)
+#               volumeMounts:
+#                 - name: data
+#                   mountPath: /data
+#                   readOnly: true
+#           volumes:
+#             - name: data
+#               persistentVolumeClaim:
+#                 claimName: __SERVICE__-data
