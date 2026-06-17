@@ -43,4 +43,9 @@ tags = ["exposure", "hostname"]
 description = "Token shape is safe; everything scannable — including the example env — is scanned."
 regexes = [
   '''\$\{SECRET:[A-Z_]+\}''',
+  # `cluster.local` is the universal Kubernetes cluster DNS domain — a fixed constant identical in
+  # every cluster, NOT one of the house's private hostnames. The internal-hostname-tld rule exists to
+  # catch real .local/.lan hosts; this exempts only the k8s constant so manifests can reference
+  # *.svc.cluster.local (e.g. cert-manager DNS-01 self-check notes) without tripping the gate.
+  '''(?i)\bcluster\.local\b''',
 ]
