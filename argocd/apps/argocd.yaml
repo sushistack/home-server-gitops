@@ -1,0 +1,44 @@
+# Story 2.1 — Task 3: ArgoCD self-management Application (deferred from Phase 1 per AR5).
+#
+# Lets future ArgoCD upgrades flow through GitOps and stay git-revertible (NFR14): bump
+# versions.yaml argocd.chartVersion + targetRevision below, commit, sync. Ansible's one-shot
+# `helm upgrade --install` (playbook Play 3) is only the FIRST install; this Application adopts
+# that release afterward and is the steady-state owner.
+#
+# SELF-DESTROY GUARD (AR5 trap — read before editing):
+#   - syncPolicy is MANUAL (no `automated`): with no auto-sync there is no auto-prune, so a bad
+#     self-app can never delete the controller that runs it. Operator syncs deliberately and
+#     watches the first reconcile. NEVER sync this app with `--prune`.
+#   - ServerSideApply=true: the argocd CRD annotations exceed client-side apply (AR7).
+# Together these make a misconfigured self-app inert, not fatal.
+#
+# Values come from the SAME ansible/argocd-values.yaml the bootstrap install used (multi-source
+# $values ref), so the render-CMP sidecar config stays consistent — no spurious diff that would
+# try to strip the sidecar.
+apiVersion: argoproj.io/v1alpha1   # stays v1alpha1 even on ArgoCD 3.x — do NOT "fix" this.
+kind: Application
+metadata:
+  name: argocd
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"   # platform-of-platform: ahead of infra waves 0–3 (informational; sync is manual)
+spec:
+  project: homelab
+  sources:
+    - repoURL: https://argoproj.github.io/argo-helm
+      chart: argo-cd
+      targetRevision: 9.5.21   # == versions.yaml argocd.chartVersion (appVersion v3.4.3)
+      helm:
+        valueFiles:
+          - $values/ansible/argocd-values.yaml
+    - repoURL: https://github.com/sushistack/home-server-gitops.git
+      targetRevision: HEAD
+      ref: values   # provides $values for the chart's valueFiles above
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    # NO `automated:` — manual sync only (self-destroy guard above).
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=false   # argocd ns already exists (Ansible created it); never let the self-app own its lifecycle

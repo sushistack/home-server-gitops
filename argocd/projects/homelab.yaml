@@ -10,6 +10,7 @@ spec:
   sourceRepos:
     - https://github.com/sushistack/home-server-gitops.git
     - https://charts.jetstack.io   # Story 1.5: cert-manager Helm chart (vendor repo referenced as a source)
+    - https://argoproj.github.io/argo-helm   # Story 2.1: ArgoCD self-management chart (argocd/apps/argocd.yaml)
   destinations:
     - server: https://kubernetes.default.svc
       namespace: '*'

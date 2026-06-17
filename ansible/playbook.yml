@@ -1,13 +1,22 @@
 ---
-# Host layer for Phase 1: install k3s + ArgoCD + inject the repo Secret.
-# Responsibility boundary ENDS just before the root-app sync — the single MANUAL line
+# Host layer for Phase 2a (Story 2.1): provision a 3-node k3s cluster with EMBEDDED ETCD,
+# then install ArgoCD + inject bootstrap creds. Responsibility boundary ENDS just before the
+# root-app sync — the single MANUAL line
 #   kubectl apply -f bootstrap/root-app.yaml
 # is NOT owned by Ansible (see the final comment).
 #
-# Token-free by design: real IPs come from rendered/ansible/inventory.yml; a repo
-# credential (only needed if a PRIVATE repo is ever added) comes from $ARGOCD_REPO_TOKEN.
-- name: Bootstrap Phase 1 k3s + ArgoCD
-  hosts: k3s
+# This is a CLEAN bootstrap, NOT an in-place promotion of the Phase 1 SQLite node (AR9):
+#   Play 1  node 1   — `--cluster-init` initializes etcd; capture the node token.
+#   Play 2  nodes2/3 — join as `server` (NOT agent) so all three are control-plane + worker
+#                      and etcd reaches quorum=3 (never settle at 2).
+#   Play 3  node 1   — Helm + ArgoCD (installed ONCE) + repo Secret + Cloudflare DNS-01 token.
+#
+# Token-free by design: real IPs come from rendered/ansible/inventory.yml; the repo credential
+# ($ARGOCD_REPO_TOKEN, only for a private repo) and the Cloudflare DNS-01 token
+# ($CLOUDFLARE_DNS01_TOKEN) come from the operator's environment — never tracked.
+
+- name: Play 1 — initialize etcd on node 1 (--cluster-init)
+  hosts: k3s_init
   become: true
   gather_facts: false
   vars_files:
@@ -15,18 +24,19 @@
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
   tasks:
-    - name: Install k3s server (SQLite datastore, bundled Traefik + local-path)
-      # NO --cluster-init (would switch to embedded etcd — Phase 2a only).
+    - name: Install k3s server with embedded etcd (--cluster-init, bundled Traefik + TLS-SAN)
+      # --cluster-init initializes embedded etcd (Phase 2a REQUIRES it — the opposite of Phase 1).
       # NO --disable=traefik (Traefik stays k3s-owned via its HelmChart CR).
       ansible.builtin.shell: |
         set -o pipefail
         curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION={{ k3s.version }} \
-          sh -s - server --tls-san {{ k3s_tls_san }}
+          sh -s - server --cluster-init \
+          {% for san in k3s_tls_sans %}--tls-san {{ san }} {% endfor %}
       args:
         executable: /bin/bash   # pipefail is bash-only; default sh (dash) would swallow a curl failure
         creates: /usr/local/bin/k3s
 
-    - name: Wait for the node to register and become Ready
+    - name: Wait for node 1 to register and become Ready
       # `kubectl wait --all` returns 0 immediately if the node object doesn't exist yet
       # (empty set = vacuous success), so poll until a node is actually reported Ready.
       ansible.builtin.shell: |
@@ -39,6 +49,72 @@
       retries: 18
       delay: 10
       until: k3s_node_ready.rc == 0
+
+    - name: Read the cluster node-token (the shared join secret for nodes 2 & 3)
+      ansible.builtin.slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: k3s_node_token_raw
+      no_log: true
+
+    - name: Expose the node-token to the join nodes via hostvars
+      ansible.builtin.set_fact:
+        k3s_node_token: "{{ k3s_node_token_raw.content | b64decode | trim }}"
+      no_log: true
+
+- name: Play 2 — join nodes 2 & 3 as servers (etcd quorum -> 3)
+  hosts: k3s_join
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../versions.yaml
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  tasks:
+    - name: Join the etcd cluster as a server (NOT agent — agent would leave etcd 1-member)
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION={{ k3s.version }} \
+          K3S_TOKEN={{ hostvars[groups['k3s_init'][0]]['k3s_node_token'] }} \
+          sh -s - server --server https://{{ node1_ip }}:6443 \
+          {% for san in k3s_tls_sans %}--tls-san {{ san }} {% endfor %}
+      args:
+        executable: /bin/bash
+        creates: /usr/local/bin/k3s
+      no_log: true   # K3S_TOKEN is interpolated here — keep it out of logs / -v output
+
+    - name: Wait for this node to become Ready
+      ansible.builtin.shell: |
+        set -o pipefail
+        k3s kubectl get node "$(hostname)" --no-headers 2>/dev/null | grep -qw Ready
+      args:
+        executable: /bin/bash
+      register: k3s_join_ready
+      changed_when: false
+      retries: 18
+      delay: 10
+      until: k3s_join_ready.rc == 0
+
+- name: Play 3 — ArgoCD + bootstrap creds (node 1 only, installed ONCE)
+  hosts: k3s_init
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../versions.yaml
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  tasks:
+    - name: Confirm etcd quorum — wait until all three nodes are Ready (never settle at 2)
+      ansible.builtin.shell: |
+        set -o pipefail
+        ready=$(k3s kubectl get nodes --no-headers 2>/dev/null | grep -cw Ready)
+        [ "$ready" -ge 3 ]
+      args:
+        executable: /bin/bash
+      register: cluster_quorum
+      changed_when: false
+      retries: 18
+      delay: 10
+      until: cluster_quorum.rc == 0
 
     - name: Install Helm (installer pinned to a tag, not main — reproducible)
       ansible.builtin.shell: |
@@ -57,6 +133,16 @@
         dest: /tmp/render-tokens.env
         mode: '0600'
       no_log: true
+
+    - name: Ensure the argocd namespace exists (the Helm install --create-namespace runs LATER;
+            the render-token Secret below is injected into it FIRST, so it must exist now)
+      ansible.builtin.shell: |
+        set -eo pipefail
+        k3s kubectl create namespace {{ argocd_namespace }} \
+          --dry-run=client -o yaml | k3s kubectl apply -f -
+      args:
+        executable: /bin/bash
+      changed_when: true
 
     - name: Inject the render-token Secret DIRECTLY (bootstrap-class, like the repo Secret — never via Sealed Secrets)
       ansible.builtin.shell: |
@@ -79,6 +165,8 @@
         mode: '0644'
 
     - name: Install ArgoCD via Helm (idempotent; render CMP sidecar from argocd-values.yaml)
+      # Installed ONCE, on node 1. The self-management Application (argocd/apps/argocd.yaml)
+      # adopts this release after the root sync so future upgrades flow through GitOps (AR5/NFR14).
       ansible.builtin.shell: |
         set -eo pipefail
         helm repo add argo https://argoproj.github.io/argo-helm
@@ -94,7 +182,7 @@
     - name: Inject the ArgoCD repository Secret DIRECTLY (AR4 — never via Sealed Secrets)
       # Public repo -> ArgoCD reads anonymously; this Secret registers it so `argocd repo list`
       # shows it. If a PRIVATE repo is ever added, set ARGOCD_REPO_TOKEN — same direct-inject
-      # path, no circular dependency on a sealed-secrets controller that doesn't exist in Phase 1.
+      # path, no circular dependency on a sealed-secrets controller (which is wave 0, Story 2.3).
       ansible.builtin.shell: |
         k3s kubectl apply -f - <<'EOF'
         apiVersion: v1
@@ -114,6 +202,29 @@
         EOF
       no_log: true   # ARGOCD_REPO_TOKEN is interpolated into this task — keep it out of logs / -v output
       changed_when: true
+
+    - name: Inject the Cloudflare DNS-01 token Secret DIRECTLY (AR4 bootstrap secret — NEW in Phase 2a)
+      # Story 2.4's production ClusterIssuer (and the Story 1.5 staging one already) reference
+      # Secret `cloudflare-dns01-token` (key api-token) in ns cert-manager. It is a BOOTSTRAP
+      # credential, so Ansible injects it directly — routing it through Sealed Secrets (wave 0)
+      # would be the circular dependency AR4 forbids. Scope the token least-privilege
+      # (Zone:DNS:Edit on the public zone only — NFR11). The cert-manager namespace is created
+      # here so the Secret exists before cert-manager (wave 1) reconciles onto it.
+      ansible.builtin.shell: |
+        set -eo pipefail
+        k3s kubectl create namespace {{ certmanager_namespace }} \
+          --dry-run=client -o yaml | k3s kubectl apply -f -
+        k3s kubectl create secret generic cloudflare-dns01-token \
+          --namespace {{ certmanager_namespace }} \
+          --from-literal=api-token="$CLOUDFLARE_DNS01_TOKEN" \
+          --dry-run=client -o yaml | k3s kubectl apply -f -
+      args:
+        executable: /bin/bash
+      environment:
+        CLOUDFLARE_DNS01_TOKEN: "{{ lookup('ansible.builtin.env', 'CLOUDFLARE_DNS01_TOKEN') }}"
+      no_log: true   # the token is passed via env — keep it out of logs / -v output
+      changed_when: true
+      when: lookup('ansible.builtin.env', 'CLOUDFLARE_DNS01_TOKEN') | length > 0
 
     # ── BOUNDARY ──────────────────────────────────────────────────────────────
     # Ansible STOPS here. The next (manual) step is the single GitOps entry point:

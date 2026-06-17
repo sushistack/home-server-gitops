@@ -1,14 +1,35 @@
 # Tokenized — render before use:  bin/render ansible/inventory.yml
-#   -> rendered/ansible/inventory.yml (git-ignored, holds the real IP)
+#   -> rendered/ansible/inventory.yml (git-ignored, holds the real IPs)
 #   ansible-playbook -i rendered/ansible/inventory.yml ansible/playbook.yml
+#
+# Phase 2a (Story 2.1): THREE server nodes with embedded etcd (quorum=3, never 2).
+#   - k3s_init  : node 1 only, `--cluster-init` (initializes etcd)
+#   - k3s_join  : nodes 2 & 3, join the etcd cluster as `server` (NOT agent)
+# All three are control-plane + worker. The Phase 1 single node (SQLite) is throwaway
+# and is NOT promoted in place (AR9) — these are three net-new VMs.
 all:
-  hosts:
-    k3s:
-      ansible_host: ${SECRET:IP_CLUSTER_NODE}
-      ansible_user: root
+  children:
+    k3s_init:
+      hosts:
+        k3s-2a-1:
+          ansible_host: ${SECRET:IP_CLUSTER_NODE_A}
+    k3s_join:
+      hosts:
+        k3s-2a-2:
+          ansible_host: ${SECRET:IP_CLUSTER_NODE_B}
+        k3s-2a-3:
+          ansible_host: ${SECRET:IP_CLUSTER_NODE_C}
   vars:
+    ansible_user: root
     # Version pins are NOT duplicated here — they live in versions.yaml (NFR14 SSOT),
     # loaded by the playbook via vars_files. Only host-shaped facts belong in the inventory.
-    k3s_tls_san: ${SECRET:IP_CLUSTER_NODE}
+    # Every node's apiserver cert is valid for all three IPs (kubeconfig may target any node).
+    k3s_tls_sans:
+      - ${SECRET:IP_CLUSTER_NODE_A}
+      - ${SECRET:IP_CLUSTER_NODE_B}
+      - ${SECRET:IP_CLUSTER_NODE_C}
+    # Node 1 is where init runs and where the (single) ArgoCD/Helm install happens.
+    node1_ip: ${SECRET:IP_CLUSTER_NODE_A}
     argocd_namespace: argocd
+    certmanager_namespace: cert-manager   # where the Cloudflare DNS-01 token Secret lands (Story 2.4 consumes it)
     gitops_repo_url: https://github.com/sushistack/home-server-gitops.git
