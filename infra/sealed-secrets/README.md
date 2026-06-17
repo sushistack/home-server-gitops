@@ -54,33 +54,92 @@ already-sealed secrets after a renewal — so export **all** of them in one file
 kubectl -n sealed-secrets get secret \
   -l sealedsecrets.bitnami.com/sealed-secrets-key \
   -o yaml > /tmp/ss-keys.yaml          # plaintext — /tmp only, shred after step 2
+
+# Guard: a label typo / wrong namespace / not-yet-generated key makes `kubectl get`
+# exit 0 with an EMPTY list (no error) — which would silently produce a useless export.
+# Fail loudly instead. (The export is the entire DR anchor; an empty one is worse than none.)
+test "$(kubectl -n sealed-secrets get secret \
+  -l sealedsecrets.bitnami.com/sealed-secrets-key -o name | wc -l)" -ge 1 \
+  || { echo 'FATAL: no sealing-key Secrets matched — refusing to write an empty export'; exit 1; }
 ```
 
 ### 2. Age-encrypt and store off-host (Plane 0)
 
 ```sh
 # Passphrase-based (simplest); or `age -r <recipient-pubkey>` for key-based.
-age -p -o sealed-secrets-keys.$(date +%Y%m%d).yaml.age /tmp/ss-keys.yaml
-shred -u /tmp/ss-keys.yaml             # destroy the plaintext immediately
+# Second-resolution timestamp (NOT just %Y%m%d): two exports on the same day — e.g. an
+# export right after a rotation re-export — must NOT collide on one filename and silently
+# clobber the prior .age, which may be the only off-host copy of a key the new one omits.
+age -p -o "sealed-secrets-keys.$(date +%Y%m%dT%H%M%S).yaml.age" /tmp/ss-keys.yaml
+shred -u /tmp/ss-keys.yaml             # best-effort overwrite — see caveat below
 
 # Move the .age ciphertext OFF this host to Plane 0 (e.g. password manager /
 # offline media). It must NOT live only on a cluster node, and must NOT be
 # committed (not even to internal/ in a pushed repo).
 ```
 
+> **`shred` caveat (read it — this is the master key).** `shred` only reliably
+> overwrites in place on a traditional journaled-off block filesystem. On `tmpfs`
+> (RAM-backed `/tmp`, common on modern distros) and on copy-on-write filesystems
+> (Btrfs/ZFS/overlay — k3s nodes often run overlay) it does **not** guarantee the
+> plaintext is gone, and swap may already hold a copy. So treat the plaintext key
+> as having existed on this host. Best practice: run the export on a host with an
+> encrypted disk + disabled/encrypted swap, prefer a `tmpfs`/`ramfs` scratch dir
+> you can `umount` (RAM cleared on unmount/reboot), and rely on the **age
+> encryption + off-host move**, not `shred`, as the real protection.
+
 ### 3. Restore path (exercised in Gate 0 / Story 2.6)
 
-On a clean cluster, the restored key must be applied **before/at** controller
-start so the controller adopts it instead of generating a fresh one (a fresh key
-cannot decrypt existing SealedSecrets):
+The restored key MUST land **before** the controller's first start. If the
+controller starts first and finds no key it **generates a fresh one**, and every
+existing SealedSecret becomes permanently undecryptable. This is a hard ordering
+constraint, and it fights this Application's own `automated:{prune,selfHeal}`
+sync policy ([`argocd/apps/sealed-secrets.yaml`](../../argocd/apps/sealed-secrets.yaml)):
+the instant ArgoCD's root-app reconciles, wave-0 `sealed-secrets` auto-syncs and
+the controller comes up. So the key has to be in place **before ArgoCD can sync
+this app** — you cannot rely on racing `kubectl apply` against an
+already-running auto-sync.
+
+**Clean rebuild (Gate 0) — restore the key BEFORE bootstrapping ArgoCD:**
 
 ```sh
-age -d sealed-secrets-keys.YYYYMMDD.yaml.age > /tmp/ss-keys.yaml
+# Do this on the fresh cluster while ArgoCD / the root-app is NOT yet installed.
+age -d sealed-secrets-keys.YYYYMMDDTHHMMSS.yaml.age > /tmp/ss-keys.yaml
 kubectl create namespace sealed-secrets --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f /tmp/ss-keys.yaml     # restore key(s) into the controller namespace
-shred -u /tmp/ss-keys.yaml
-# THEN let ArgoCD install the controller (wave 0) — it finds the existing key and adopts it.
-# Verify: a previously-sealed SealedSecret materializes its Secret again.
+shred -u /tmp/ss-keys.yaml             # best-effort only — see the shred caveat in step 2
+
+# Capture the restored key fingerprint so you can prove adoption (not regeneration) below.
+kubectl -n sealed-secrets get secret -l sealedsecrets.bitnami.com/sealed-secrets-key \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | sort > /tmp/keys.before
+
+# ONLY NOW bootstrap ArgoCD + the root-app. Wave-0 sealed-secrets syncs, the
+# controller starts, finds the existing key(s), and adopts them.
+```
+
+**If ArgoCD is already running** (partial rebuild — controller not yet up but the
+app could self-heal at any moment), suspend auto-sync first so it cannot start the
+controller from under you:
+
+```sh
+kubectl -n argocd patch application sealed-secrets --type merge \
+  -p '{"spec":{"syncPolicy":{"automated":null}}}'   # pause auto-sync
+# ...run the create-namespace + apply-key block above...
+kubectl -n argocd patch application sealed-secrets --type merge \
+  -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'  # resume
+```
+
+**Verify adoption, not regeneration** (the failure this whole step exists to catch):
+
+```sh
+# Wait for the controller, then confirm the live key set == what you restored.
+kubectl -n sealed-secrets rollout status deploy/sealed-secrets
+kubectl -n sealed-secrets get secret -l sealedsecrets.bitnami.com/sealed-secrets-key \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | sort > /tmp/keys.after
+diff /tmp/keys.before /tmp/keys.after \
+  && echo 'OK: controller adopted the restored key(s)' \
+  || echo 'DANGER: key set changed — controller may have generated a fresh key; STOP and investigate'
+# Final proof: a previously-sealed SealedSecret materializes its Secret again.
 ```
 
 ### Rotation caveat — re-export after renewal
