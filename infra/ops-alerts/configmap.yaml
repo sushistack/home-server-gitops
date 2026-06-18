@@ -54,7 +54,7 @@ data:
     kubectl get nodes.longhorn.io -A -o json | jq -r --argjson pct "$DISK_PCT" '
       .items[] | .metadata.name as $node
       | (.status.diskStatus // {}) | to_entries[]
-      | select((.value.storageMaximum // 0) > 0)
+      | select((.value.storageMaximum // 0) > 0 and .value.storageAvailable != null)
       | ((1 - (.value.storageAvailable / .value.storageMaximum)) * 100) as $used
       | select($used >= $pct)
       | "\($node)\t\(.key)\t\($used | floor)"' \
@@ -75,19 +75,20 @@ data:
     for ns in $stateful_ns; do
       kubectl get deploy,statefulset -n "$ns" -o json | jq -r '
         .items[] | select((.status.readyReplicas // 0) < (.spec.replicas // 0))
-        | "\(.kind)/\(.metadata.name)\t\(.status.readyReplicas // 0)\t\(.spec.replicas)"' \
+        | "\(.kind)/\(.metadata.name)\t\(.status.readyReplicas // 0)\t\(.spec.replicas // 0)"' \
       | while IFS="$(printf '\t')" read -r wl ready desired; do
           notify "service down: $ns/$wl" "$ns/$wl ready ${ready}/${desired} (stateful workload degraded)"
         done
     done
 
-    # (d) backup/restore Job failure — any Job whose name carries the -backup convention with
-    #     status.failed>=1. Matches real CronJob-spawned jobs (ntfy-backup-<ts>, navidrome-backup-<ts>, ...).
+    # (d) backup/restore Job failure — any Job whose name carries the -backup OR -restore convention
+    #     with status.failed>=1. Matches CronJob-spawned backups (ntfy-backup-<ts>, navidrome-backup-<ts>)
+    #     AND one-off cutover restore Jobs (miniflux-restore, ...). AC1(d) covers backup *and* restore.
     kubectl get jobs -A -o json | jq -r '
-      .items[] | select((.status.failed // 0) >= 1) | select(.metadata.name | test("-backup"))
+      .items[] | select((.status.failed // 0) >= 1) | select(.metadata.name | test("-(backup|restore)"))
       | "\(.metadata.namespace)/\(.metadata.name)\t\(.status.failed)"' \
     | while IFS="$(printf '\t')" read -r job failed; do
-        notify "backup FAILED: $job" "Backup/restore Job $job failed (status.failed=${failed})"
+        notify "backup/restore FAILED: $job" "Backup/restore Job $job failed (status.failed=${failed})"
       done
 
     echo "ops-alerter poll complete"

@@ -15,6 +15,7 @@ spec:
   jobTemplate:
     spec:
       activeDeadlineSeconds: 180   # a handful of kubectl reads + curls; bound so a hung run goes Failed (visible)
+      backoffLimit: 1              # a failed poll (egress block -> /readyz FATAL) won't pass on instant retry; 1 retry, not the default 6
       template:
         metadata:
           # ops-alerter has no Service, so labelling the pod with the app name is safe (no dead
