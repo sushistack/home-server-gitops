@@ -16,7 +16,8 @@ Polls `*/15 * * * *` (Asia/Seoul) and `curl`s a high-priority (`X-Priority: 5`) 
 - **(c) stateful service down** — a Deployment/StatefulSet with `readyReplicas < desired`, scoped to
   namespaces that carry a `<service>-backup` CronJob (the Story 4.1 backup-actor convention = "this
   is a stateful service"). Orthogonal to uptime-kuma's HTTP probes — see Escalation.
-- **(d) backup/restore Job failure** — any Job named `*-backup*` with `status.failed ≥ 1`.
+- **(d) backup/restore Job failure** — any Job named `*-backup*` or `*-restore*` with `status.failed ≥ 1`
+  (CronJob-spawned backups and one-off cutover restore Jobs alike).
 
 Read-only `ClusterRole` (`get,list` on certificates / longhorn nodes / deployments+statefulsets /
 jobs+cronjobs); no writes, no secret reads. ntfy token via `envFrom` from the `ops-alerts-secrets`
