@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - pvc.yaml                # navidrome-data (DB-class) + navidrome-music (file-class) — Prune=false/Retain
+  - configmap.yaml          # navidrome-config: non-secret ND_* env (envFrom: configMapRef)
+  - deployment.yaml
+  - service.yaml
+  - ingressroute.yaml       # web->websecure (TLS serve + HTTP->HTTPS redirect); host tokenized
+  - certificate.yaml        # per-host cert-manager Certificate -> navidrome-tls (letsencrypt-prod)
+  - backup-cronjob.yaml     # DB-class backup actor (SQLite .backup -> R2); music NOT dumped
+  - sealedsecret.yaml       # navidrome-backup-r2: R2 cred for the CronJob (sealed to name+ns)
+  - sealedsecret-lastfm.yaml # navidrome-lastfm: ND_LASTFM_APIKEY/SECRET (envFrom: secretRef)
+# NOT included on purpose:
+#   _cutover/   -> one-shot ingest Job, applied by hand during the cutover (must NOT be ArgoCD-managed)
+
+# Use `labels:` (newer field), NEVER commonLabels (pollutes selectors -> immutable conflict) and
+# NEVER namePrefix (breaks the name+ns binding SealedSecrets are sealed against). includeSelectors:
+# false keeps these out of spec.selector / matchLabels (hand-written in deployment.yaml).
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/name: navidrome
+      app.kubernetes.io/instance: navidrome
+      app.kubernetes.io/part-of: navidrome
+      app.kubernetes.io/managed-by: argocd
+      app.kubernetes.io/component: app

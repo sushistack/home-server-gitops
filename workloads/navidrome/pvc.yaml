@@ -1,0 +1,39 @@
+# Story 4.3 — navidrome's TWO data classes get TWO PVCs with DIFFERENT backup classes (AC1):
+#   navidrome-data  -> SQLite metadata (play counts, scrobble state, library index) = DB-class.
+#                      Dumped to R2 by backup-cronjob.yaml (online sqlite3 .backup, ≤6h).
+#   navidrome-music -> the regenerable library (yt-dlp/Last.fm discovery). file-class.
+#                      Crash-consistent Longhorn recurring SNAPSHOT only — NEVER dumped to R2
+#                      (shipping GBs of regenerable media every 6h is slow+costly; Longhorn
+#                      replication covers availability). See docs/runbooks/stateful-cutover.md
+#                      "Backup scope". The snapshot is configured on the Longhorn side (RecurringJob),
+#                      not in this PVC — see the runbook.
+# Both: RWO (Longhorn single-node attach), Prune=false + Retain so ArgoCD/Longhorn never delete
+# real data on PVC removal (AR15; architecture.md 803).
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: navidrome-data
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi   # navidrome.db (~3 MB today) + cache/covers; grow via PR if it climbs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: navidrome-music
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 10Gi   # ~2.3 GB library today; headroom for the discovery pipeline. Grow via PR.
