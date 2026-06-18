@@ -55,6 +55,10 @@
 #                   tar -C /scratch -czf "/scratch/__SERVICE__-${ts}.tar.gz" <files>
 #                   rclone copy "/scratch/__SERVICE__-${ts}.tar.gz" "r2:homelab-k3s-services-backup/__SERVICE__/"
 #                   rclone delete --min-age 720h "r2:homelab-k3s-services-backup/__SERVICE__/" || true
+#               env:
+#                 # bucket-scoped R2 token can't ListBuckets/CreateBucket -> skip rclone's bucket probe (else 403)
+#                 - name: RCLONE_CONFIG_R2_NO_CHECK_BUCKET
+#                   value: "true"
 #               envFrom:
 #                 - secretRef:
 #                     name: __SERVICE__-r2           # per-ns R2 SealedSecret (sealed to name+ns)

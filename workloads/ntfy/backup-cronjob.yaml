@@ -58,6 +58,12 @@ spec:
                   # prefix only holds our own archives. // ponytail: rclone delete is the lazy port;
                   # swap to an R2 lifecycle rule if you'd rather not grant the cred delete scope.
                   rclone delete --min-age 720h "r2:homelab-k3s-services-backup/ntfy/" || true
+              env:
+                # The R2 token is bucket-scoped (Object R&W), so it CANNOT ListBuckets/CreateBucket
+                # (account-level). rclone probes/creates the bucket before upload by default -> 403.
+                # no_check_bucket skips that probe and PUTs straight to the existing bucket. (R2 + scoped-token pattern)
+                - name: RCLONE_CONFIG_R2_NO_CHECK_BUCKET
+                  value: "true"
               envFrom:
                 - secretRef:
                     name: ntfy-backup-r2   # per-ns SealedSecret: R2 creds + rclone remote (sealedsecret.yaml)
