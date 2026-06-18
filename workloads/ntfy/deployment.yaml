@@ -27,7 +27,9 @@ spec:
           #   docker buildx imagetools inspect binwiederhier/ntfy:latest
           # Upgrade = re-inspect, bump this digest via PR (GitOps-revertible).
           image: binwiederhier/ntfy@sha256:f8a9b104313b87cc24ae4f775f39e6328205b57dff6ede3eaf098a91e5d79f59
-          command: ["serve"]
+          # Image is ENTRYPOINT ["ntfy"] CMD ["serve"]. In k8s `command:` overrides ENTRYPOINT (NOT
+          # the same as Compose `command:`, which sets args) — so use `args:` to keep `ntfy serve`.
+          args: ["serve"]
           ports:
             - containerPort: 80
           env:
