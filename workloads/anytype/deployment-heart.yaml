@@ -13,8 +13,10 @@ metadata:
   labels:
     app.kubernetes.io/name: anytype-heart
     app.kubernetes.io/component: heart   # per-component (kustomize labels: carry only the shared identity)
-spec:
-  replicas: 1
+  # PARKED at 0 until cutover — see deployment-anysync.yaml. heart is the harder blocker (private
+  # REPLACE_AT_CUTOVER digest = unpullable + stub envFrom secret), so this is the pod that pages.
+  # Operator scales to 1 after pinning the digest + sealing secrets (runbook). ignoreDifferences guards it.
+  replicas: 0
   progressDeadlineSeconds: 120
   strategy:
     type: Recreate

@@ -17,8 +17,12 @@ metadata:
   labels:
     app.kubernetes.io/name: anytype
     app.kubernetes.io/component: anysync   # per-component (kustomize labels: carry only the shared identity)
-spec:
-  replicas: 1
+  # PARKED at 0 until cutover. The pod CANNOT run pre-cutover (no ingested /data+identity, stub
+  # secrets, REPLACE_AT_CUTOVER heart digest), and ingest needs the Deployments at 0 anyway (RWO).
+  # Deploying at 1 just guarantees a crashloop that the NFR15a poller (4.2) pages on every 15m. The
+  # operator scales to 1 AFTER ingest+seal+pin (runbook); /spec/replicas is in ignoreDifferences so
+  # ArgoCD won't revert that. // ponytail: 0 is the honest resting state, not a workaround.
+  replicas: 0
   progressDeadlineSeconds: 120   # surface a stuck rollout as Degraded fast (operator git-revert) — 4.1 precedent
   strategy:
     type: Recreate
