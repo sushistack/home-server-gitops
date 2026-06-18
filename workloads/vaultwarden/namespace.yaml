@@ -1,0 +1,7 @@
+# Story 4.8 — vaultwarden cutover (CRITICAL, LAST). Password vault: single-writer SQLite
+# (db.sqlite3 + WAL) on a Longhorn RWO PVC. One service = one namespace = one ArgoCD Application
+# (the workloads ApplicationSet picks this up). Same shape as the navidrome/ntfy SQLite references.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vaultwarden

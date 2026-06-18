@@ -1,0 +1,18 @@
+# Story 4.8 — non-secret vaultwarden config (ports the non-secret half of the Compose
+# `environment:` block, docker-compose.yml:62-69). Consumed via `envFrom: configMapRef`. The ONLY
+# secret-bearing var, ADMIN_TOKEN, is NOT here — it arrives from the vaultwarden-secrets SealedSecret
+# via a SEPARATE envFrom: secretRef (sealedsecret-admin.yaml). (AC2 / AR22)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vaultwarden-config
+data:
+  TZ: "Asia/Seoul"
+  # DOMAIN is tokenized (${SECRET:DOMAIN_VAULTWARDEN}) so no public host literal lands in Git — the
+  # render CMP substitutes the real host (vault.<public-zone>) at ArgoCD sync time (same mechanism as
+  # the IngressRoute/Certificate; identical to miniflux BASE_URL). MUST stay vault.<zone> unchanged
+  # at cutover (FR11 / Reconciliation 1) — the external hostname does not change.
+  DOMAIN: "https://${SECRET:DOMAIN_VAULTWARDEN}"
+  SIGNUPS_ALLOWED: "false"
+  WEBSOCKET_ENABLED: "true"        # /notifications/hub served on the same :80 by current vaultwarden
+  DATABASE_URL: "/data/db.sqlite3"

@@ -1,0 +1,56 @@
+# Story 4.8 — public route for vaultwarden: web -> websecure, TLS from the vaultwarden-tls Secret
+# (certificate.yaml); plain HTTP 301-redirects to HTTPS. Same worked shape as navidrome/ntfy/draw.
+# Host is tokenized (${SECRET:DOMAIN_VAULTWARDEN}); the render CMP substitutes at ArgoCD sync time.
+# traefik.io/v1alpha1 (v3) — the old traefik.containo.us API silently fails.
+#
+# WEBSOCKET: vaultwarden has WEBSOCKET_ENABLED=true (/notifications/hub). A plain IngressRoute
+# forwards the `Upgrade: websocket` header by default — do NOT add any header-stripping middleware on
+# this route. The only middleware here is the HTTP->HTTPS redirect (web entrypoint only).
+#
+# CUTOVER (live, no file): the cloudflared tunnel origin for vault.<zone> currently points at NPM
+# (Compose). The cutover SWITCH is re-pointing that cloudflared route NPM -> Traefik
+# (https://<node>:443, originServerName=${SECRET:DOMAIN_VAULTWARDEN}); flipping it back to NPM is the
+# rollback (Compose stays live the whole time). See docs/runbooks/stateful-cutover.md Step 6.
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: vaultwarden-redirect-https
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+# HTTPS (websecure :443) — serves vaultwarden with the cert-manager cert.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: vaultwarden
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`${SECRET:DOMAIN_VAULTWARDEN}`)
+      kind: Rule
+      services:
+        - name: vaultwarden
+          port: 80
+  tls:
+    secretName: vaultwarden-tls
+---
+# HTTP (web :80) — 301 to HTTPS via the redirect middleware.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: vaultwarden-redirect
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`${SECRET:DOMAIN_VAULTWARDEN}`)
+      kind: Rule
+      middlewares:
+        - name: vaultwarden-redirect-https
+      services:
+        - name: vaultwarden   # required by the IngressRoute schema; middleware redirects before it's hit
+          port: 80

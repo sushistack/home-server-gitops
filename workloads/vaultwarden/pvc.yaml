@@ -1,0 +1,22 @@
+# Story 4.8 — vaultwarden's single durable PVC. Unlike navidrome (two classes) vaultwarden is ONE
+# data class: everything under /data is durable, non-regenerable, CRITICAL.
+#   db.sqlite3 (+ WAL)   — the vault (users, ciphers, org keys)
+#   rsa_key.pem/.pub     — JWT signing keys; LOSING THEM forces every client/device to re-auth
+#   attachments/ sends/  — user file attachments + Bitwarden Sends (durable)
+#   config.json          — admin-panel settings
+#   icon_cache/          — regenerable (favicons) — the only throwaway dir
+# RWO (Longhorn single-node attach), Prune=false + Retain so ArgoCD/Longhorn NEVER auto-delete the
+# vault on PVC removal (AR15). This is the highest-stakes volume in the platform.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vaultwarden-data
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi   # db.sqlite3 is tiny (~MBs); headroom for attachments/sends. Grow via PR if it climbs.

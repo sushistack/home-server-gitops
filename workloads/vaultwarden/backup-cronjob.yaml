@@ -1,0 +1,92 @@
+# Story 4.8 — vaultwarden backup actor. Online sqlite3 .backup of the vault DB + the durable,
+# non-regenerable companions (rsa_key.*, config.json, attachments/, sends/) -> R2. Ports the Compose
+# vaultwarden-backup offen sidecar (docker-compose.yml:540-572, `50 */6 * * *`, prefix vaultwarden-).
+# Copied from the navidrome reference (Story 4.3/4.1) with the dump command + R2 path changed.
+#
+# Why MORE than just db.sqlite3 (unlike navidrome's DB-only dump): every file under /data is durable
+# here. rsa_key.* is LOAD-BEARING — lose it and every client re-auths (the JWT signing key). icon_cache/
+# is the only regenerable dir and is deliberately excluded.
+#
+# RWO multi-mount trap (Story 4.1 Reconciliation 1): vaultwarden-data is RWO -> Longhorn attaches to
+# one node. This Job co-schedules onto the vaultwarden pod's node via podAffinity and mounts the PVC
+# read-write (online `sqlite3 .backup` needs the -wal/-shm files), writing the dump to an emptyDir
+# /scratch — NEVER back onto /data. The app is NOT scaled to 0 (online backup needs no quiesce — this
+# also closes the Compose torn-snapshot gap, deferred-work.md:58-59 / Reconciliation 3).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vaultwarden-backup
+spec:
+  schedule: "50 */6 * * *"         # ≤6h (matches the freed Compose vaultwarden-backup slot); NFR5 cadence
+  timeZone: Asia/Seoul
+  concurrencyPolicy: Forbid
+  # A hung pod would otherwise run forever and, with Forbid, silently suppress every later backup.
+  # Bound both: activeDeadlineSeconds kills the job (-> Failed, visible); a missed schedule is only
+  # honored within startingDeadlineSeconds.
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 900       # ~15 min ceiling: apk + sqlite .backup + copy + rclone
+      template:
+        metadata:
+          # NOT `app.kubernetes.io/name: vaultwarden` — that is the Service selector, and this pod has
+          # no listener, so sharing it would add a dead endpoint to the vaultwarden Service every run.
+          labels:
+            app.kubernetes.io/name: vaultwarden-backup
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: vaultwarden
+                  topologyKey: kubernetes.io/hostname   # land on the node holding the RWO data volume
+          containers:
+            - name: backup
+              # sqlite3 + rclone in one small image. // ponytail: runtime `apk add` floats the tool
+              # versions and needs egress to the alpine CDN — fine under today's allow-all; when the
+              # network-baseline default-deny lands, allow egress to the CDN + R2, or bake a pinned
+              # sqlite+rclone image (upgrade path). Pin alpine by digest in that same sweep.
+              image: alpine:3.20
+              command:
+                - /bin/sh
+                - -ceu
+                - |
+                  apk add --no-cache sqlite rclone ca-certificates tzdata
+                  ts=$(date +%Y-%m-%dT%H-%M-%S)
+                  mkdir -p /scratch/bundle
+                  # online, lock-safe DB copy — source stays live (no scale-down).
+                  sqlite3 /data/db.sqlite3 ".backup /scratch/bundle/db.sqlite3"
+                  # durable companions (rsa_key.* is load-bearing; icon_cache/ deliberately excluded).
+                  cp -a /data/rsa_key.* /scratch/bundle/ 2>/dev/null || true
+                  cp -a /data/config.json /scratch/bundle/ 2>/dev/null || true
+                  [ -d /data/attachments ] && cp -a /data/attachments /scratch/bundle/
+                  [ -d /data/sends ] && cp -a /data/sends /scratch/bundle/
+                  tar -C /scratch/bundle -czf "/scratch/vaultwarden-${ts}.tar.gz" .
+                  rclone copy "/scratch/vaultwarden-${ts}.tar.gz" "r2:homelab-k3s-services-backup/vaultwarden/"
+                  # ~30-day retention (offen semantics). homelab-k3s-services-backup is the dedicated
+                  # k3s-service bucket, so this prefix only holds our own archives.
+                  rclone delete --min-age 720h "r2:homelab-k3s-services-backup/vaultwarden/" || true
+              env:
+                # bucket-scoped token (Object R&W) can't ListBuckets/CreateBucket -> rclone's default
+                # bucket probe 403s; no_check_bucket skips it and PUTs straight to the existing bucket.
+                - name: RCLONE_CONFIG_R2_NO_CHECK_BUCKET
+                  value: "true"
+              envFrom:
+                - secretRef:
+                    name: vaultwarden-backup-r2   # per-ns SealedSecret: R2 creds + rclone remote
+              volumeMounts:
+                - name: data
+                  mountPath: /data          # RW: online .backup needs -wal/-shm (Reconciliation 1)
+                - name: scratch
+                  mountPath: /scratch
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: vaultwarden-data
+            - name: scratch
+              emptyDir: {}

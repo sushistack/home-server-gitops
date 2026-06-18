@@ -1,0 +1,15 @@
+# Story 4.8 — per-host production TLS for vaultwarden. cert-manager issues a browser-trusted cert
+# for the single host ${SECRET:DOMAIN_VAULTWARDEN} from the PRODUCTION DNS-01 ClusterIssuer
+# (letsencrypt-prod, Story 2.4) into the `vaultwarden-tls` Secret in THIS namespace, served by the
+# websecure IngressRoute. Per-host (not the excalidraw shared wildcard) — the copyable Epic 4 pattern.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vaultwarden-tls
+spec:
+  secretName: vaultwarden-tls
+  dnsNames:
+    - "${SECRET:DOMAIN_VAULTWARDEN}"   # single public host (tokenized); vault.<public-zone>
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer

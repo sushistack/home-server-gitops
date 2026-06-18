@@ -1,0 +1,79 @@
+# Story 4.8 — vaultwarden on k3s (ports configs/docker/docker-compose.yml:46-84).
+# CRITICAL single-writer SQLite vault on an RWO volume: strategy MUST be Recreate (never
+# RollingUpdate — two pods sharing one WAL corrupts the vault, the named anti-pattern AR14) and
+# terminationGracePeriodSeconds 30 ports the Compose stop_grace_period: 30s WAL-checkpoint flush.
+# Mechanically the same shape as navidrome (Story 4.3) / the n8n CRITICAL precedent (Story 4.7).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vaultwarden
+spec:
+  replicas: 1
+  # Recreate -> old pod dies before the new starts, so a stuck rollout is a full outage with no
+  # healthy fallback. 120s (vs the 600s default) surfaces ArgoCD Degraded fast for a quick git revert.
+  progressDeadlineSeconds: 180
+  strategy:
+    type: Recreate
+  # Hand-written selector (kept out of kustomize labels) so it stays immutable across re-applies.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vaultwarden
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vaultwarden
+    spec:
+      terminationGracePeriodSeconds: 30   # WAL checkpoint flush on shutdown (= Compose stop_grace_period)
+      containers:
+        - name: vaultwarden
+          # vaultwarden/server is :latest in Compose (AR29 forbids :latest) -> pin by digest.
+          # 🔴 OPERATOR (cutover, live): pin to the EXACT digest of the image running on Compose so the
+          # cutover does NOT trigger a surprise DB schema migration. Capture it at the window with:
+          #   docker buildx imagetools inspect vaultwarden/server:latest   # -> repo@sha256:...
+          # then replace the placeholder below via PR (GitOps-revertible). This digest IS the version
+          # SSOT for vaultwarden (workload images live in their manifest, not versions.yaml).
+          image: vaultwarden/server@sha256:d626d04934cd1192ad8ced1adb975099fca78cec33ab467d2d3c923cde7f3b0c
+          ports:
+            - containerPort: 80   # vaultwarden internal port (Compose host-mapped ${VAULTWARDEN_PORT:-8012} -> 80)
+          # Non-secret config from the ConfigMap; ADMIN_TOKEN from the SealedSecret. envFrom (NOT
+          # per-key valueFrom) avoids the empty-string overwrite trap the Compose comments warn about
+          # (host-side ${VAR} interpolation). (AC2 / AR22)
+          envFrom:
+            - configMapRef:
+                name: vaultwarden-config
+            - secretRef:
+                name: vaultwarden-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi   # memory limit only — no cpu limit (avoids CFS throttling).
+          # Compose ran healthcheck DISABLED (docker-compose.yml:83-84); author k8s probes anyway
+          # (AR31). /alive is vaultwarden's liveness endpoint (returns 200 + a UTC timestamp).
+          # startupProbe holds liveness back until /alive first answers (up to 30*5s = 150s): on an
+          # unclean stop vaultwarden replays the SQLite WAL on boot; without this guard the default
+          # liveness window can kill the pod mid-boot and crash-loop it (the DB-class trap).
+          # WebSocket (/notifications/hub, WEBSOCKET_ENABLED=true) is served on this SAME port 80 by
+          # current vaultwarden — no separate 3012 port needed.
+          startupProbe:
+            httpGet:
+              path: /alive
+              port: 80
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /alive
+              port: 80
+          livenessProbe:
+            httpGet:
+              path: /alive
+              port: 80
+          volumeMounts:
+            - name: data
+              mountPath: /data    # db.sqlite3 (+ WAL) + attachments/ + sends/ + rsa_key.* + config.json
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: vaultwarden-data
