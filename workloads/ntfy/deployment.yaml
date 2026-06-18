@@ -1,0 +1,63 @@
+# Story 4.1 — ntfy on k3s (ports configs/docker/docker-compose.yml:438-469).
+# SQLite on an RWO volume: strategy MUST be Recreate (never RollingUpdate — two pods sharing one
+# WAL is the named anti-pattern) and terminationGracePeriodSeconds 30 ports the Compose
+# stop_grace_period: 30s WAL-checkpoint flush. (AC4 / AR14; architecture.md 717)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ntfy
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  # Hand-written selector (kept out of kustomize labels) so it stays immutable across re-applies.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ntfy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ntfy
+    spec:
+      terminationGracePeriodSeconds: 30   # WAL checkpoint flush on shutdown (= Compose stop_grace_period)
+      containers:
+        - name: ntfy
+          # binwiederhier/ntfy is :latest in Compose (AR29 forbids :latest) -> pinned by digest.
+          # Multi-arch index digest captured 2026-06-18 via
+          #   docker buildx imagetools inspect binwiederhier/ntfy:latest
+          # Upgrade = re-inspect, bump this digest via PR (GitOps-revertible).
+          image: binwiederhier/ntfy@sha256:f8a9b104313b87cc24ae4f775f39e6328205b57dff6ede3eaf098a91e5d79f59
+          command: ["serve"]
+          ports:
+            - containerPort: 80
+          env:
+            - name: TZ
+              value: Asia/Seoul
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              memory: 256Mi   # memory limit only — NO cpu limit (avoids CFS throttling). ntfy is tiny.
+          # Ports the Compose healthcheck `wget --spider http://localhost/v1/health` (AR31).
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: 80
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: 80
+          volumeMounts:
+            - name: data
+              mountPath: /var/cache/ntfy   # auth.db + cache.db (the Longhorn PVC)
+            - name: config
+              mountPath: /etc/ntfy          # server.yml (ConfigMap, ro)
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: ntfy-data
+        - name: config
+          configMap:
+            name: ntfy-config

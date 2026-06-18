@@ -1,0 +1,14 @@
+# Story 4.1 — ntfy ClusterIP. Public exposure is via the Traefik IngressRoute (ingressroute.yaml),
+# not a host port (Compose bound a loopback-only host port behind NPM).
+apiVersion: v1
+kind: Service
+metadata:
+  name: ntfy
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ntfy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80

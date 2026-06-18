@@ -1,0 +1,15 @@
+# Story 4.1 — ntfy server config, ported from configs/ntfy/server.yml (home.server).
+# Becomes the `ntfy-config` ConfigMap (configMapGenerator, disableNameSuffixHash) at /etc/ntfy/server.yml.
+# base-url is the public host -> tokenized (${SECRET:DOMAIN_NTFY}); the render CMP substitutes it at
+# ArgoCD sync time (same precedent as the draw host). NO secret keys here (Reconciliation 2): ntfy's
+# own auth lives in auth.db (migrated as data); NTFY_TOKEN/NTFY_BASE_URL are PUBLISHER-side (Kuma/n8n).
+base-url: https://${SECRET:DOMAIN_NTFY}
+listen-http: :80
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: 12h
+auth-file: /var/cache/ntfy/auth.db
+auth-default-access: deny-all
+behind-proxy: true
+# Mobile background push (FCM/APNs) relayed via the ntfy.sh upstream — without it, apps get no
+# notification while backgrounded. ntfy.sh is public, so it is NOT tokenized.
+upstream-base-url: https://ntfy.sh

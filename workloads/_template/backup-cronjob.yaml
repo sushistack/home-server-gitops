@@ -1,40 +1,71 @@
-# BACKUP CRONJOB STUB — NOT a deployable resource (deliberately excluded from kustomization.yaml).
+# BACKUP CRONJOB TEMPLATE — proven shape from Story 4.1 (workloads/ntfy/backup-cronjob.yaml).
+# NOT a deployable resource here (deliberately excluded from kustomization.yaml).
 #
-# Stateless / Disposable service (no PVC)? DELETE this file — no backup job needed.
-# Stateful service? Uncomment, fill placeholders, ADD this file to kustomization.yaml resources.
+# Stateless / Disposable service (no PVC)? DELETE this file — no backup job needed (see ytdlp-api).
+# Stateful service? Copy, replace __SERVICE__ / dump command / image, ADD to kustomization resources.
 #
-# Choose the backup method by data class (architecture.md AR16/AR17):
-#   - File-class / snapshot   -> tar|rsync the PVC mount to R2.
-#   - SQLite                  -> `sqlite3 db .dump` (or .backup) -> R2.
-#   - Postgres / MySQL        -> pg_dump / mysqldump -> R2.
-#   - BadgerDB / non-quiescent-> quiesce or snapshot, then copy.
-# Destination credential = a PER-NAMESPACE R2 SealedSecret (one slot per service; never shared).
+# THE RWO MULTI-MOUNT TRAP (read first): a service's data PVC is RWO -> Longhorn attaches it to ONE
+# node, held by the app pod. A backup pod that mounts it on a DIFFERENT node fails with
+# `Multi-Attach error`. FIX (house pattern, operator-confirmed 2026-06-18): co-schedule onto the app
+# pod's node via podAffinity, mount RW, dump to an emptyDir /scratch — NEVER scale the app to 0.
+#
+# Choose the dump command by data class (architecture.md AR16/AR17) — THIS is the only per-service delta:
+#   - SQLite          -> sqlite3 <db> ".backup /scratch/<db>"   (online, lock-safe; ntfy/navidrome/karakeep)
+#   - Postgres        -> pg_dump / pg_dumpall > /scratch/dump.sql   (miniflux 4.6)
+#   - File-class      -> tar/rsync the mount -> /scratch
+#   - BadgerDB / etc. -> quiesce or snapshot, then copy (anytype 4.4)
+# Destination credential = a PER-NAMESPACE R2 SealedSecret (one slot per service; NEVER shared, no
+# central backup ns, no cross-ns RBAC). rclone reads its remote entirely from RCLONE_CONFIG_R2_* env.
 #
 # apiVersion: batch/v1
 # kind: CronJob
 # metadata:
 #   name: __SERVICE__-backup
 # spec:
-#   schedule: "0 3 * * *"            # nightly 03:00 Asia/Seoul
+#   schedule: "40 */6 * * *"          # ≤6h steady-state (NFR5); pick a slot
 #   timeZone: Asia/Seoul
 #   concurrencyPolicy: Forbid
+#   successfulJobsHistoryLimit: 3
+#   failedJobsHistoryLimit: 3
 #   jobTemplate:
 #     spec:
 #       template:
+#         metadata:
+#           labels:
+#             app.kubernetes.io/name: __SERVICE__     # podAffinity target
 #         spec:
 #           restartPolicy: OnFailure
+#           affinity:
+#             podAffinity:
+#               requiredDuringSchedulingIgnoredDuringExecution:
+#                 - labelSelector:
+#                     matchLabels:
+#                       app.kubernetes.io/name: __SERVICE__
+#                   topologyKey: kubernetes.io/hostname
 #           containers:
 #             - name: backup
-#               image: __BACKUP_IMAGE__        # e.g. an rclone/restic image, pinned by digest
-#               command: ["/bin/sh", "-c", "echo TODO: dump __SERVICE__ data && rclone copy ... r2:__SERVICE__/"]
+#               image: __BACKUP_IMAGE__              # sqlite3/pg/rclone tools, pinned by digest (AR29)
+#               command:
+#                 - /bin/sh
+#                 - -ceu
+#                 - |
+#                   ts=$(date +%Y-%m-%dT%H-%M-%S)
+#                   # <<< DB-CLASS DELTA: replace this dump with the row for your data class (above) >>>
+#                   sqlite3 /data/<db> ".backup /scratch/<db>"
+#                   tar -C /scratch -czf "/scratch/__SERVICE__-${ts}.tar.gz" <files>
+#                   rclone copy "/scratch/__SERVICE__-${ts}.tar.gz" "r2:homelab-k3s-backup/__SERVICE__/"
+#                   rclone delete --min-age 720h "r2:homelab-k3s-backup/__SERVICE__/" || true
 #               envFrom:
 #                 - secretRef:
-#                     name: __SERVICE__-r2     # per-namespace R2 SealedSecret (sealed to name+ns)
+#                     name: __SERVICE__-r2           # per-ns R2 SealedSecret (sealed to name+ns)
 #               volumeMounts:
 #                 - name: data
-#                   mountPath: /data
-#                   readOnly: true
+#                   mountPath: /data                 # RW (online .backup needs -wal/-shm)
+#                 - name: scratch
+#                   mountPath: /scratch
 #           volumes:
 #             - name: data
 #               persistentVolumeClaim:
 #                 claimName: __SERVICE__-data
+#             - name: scratch
+#               emptyDir: {}

@@ -1,0 +1,22 @@
+# Story 4.1 — per-host production TLS for ntfy. cert-manager issues a browser-trusted cert for the
+# single host ${SECRET:DOMAIN_NTFY} from the PRODUCTION DNS-01 ClusterIssuer (letsencrypt-prod,
+# Story 2.4) into the `ntfy-tls` Secret in THIS namespace, which the websecure IngressRoute serves.
+#
+# WHY PER-HOST, NOT excalidraw's shared wildcard: a Traefik IngressRoute resolves tls.secretName in
+# its OWN namespace. Reusing excalidraw-tls across namespaces needs `allowCrossNamespace=true`
+# (non-default, discouraged), and re-issuing the same `*.<zone>` wildcard per namespace would burn
+# the LE 5-duplicate-certs/week limit on a cluster rebuild. A distinct per-host cert is self-contained,
+# GitOps-native, and is NOT a duplicate. This is the copyable Epic 4 pattern (4.3-4.8 inherit it).
+# // ponytail: per-host cert is the lazy correct default; revisit only if issuance volume ever bites.
+# Renewal is automatic (cert-manager renewBefore ~2/3 of the 90-day LE leaf).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ntfy-tls
+spec:
+  secretName: ntfy-tls
+  dnsNames:
+    - "${SECRET:DOMAIN_NTFY}"   # single public host (tokenized); single-label child of the public zone
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer

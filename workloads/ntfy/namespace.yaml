@@ -1,0 +1,6 @@
+# Story 4.1 — FIRST stateful cutover. ntfy: one-way push hub (Kuma/n8n → ntfy → mobile via
+# the ntfy.sh upstream relay). SQLite-backed (auth.db durable + cache.db transient).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ntfy

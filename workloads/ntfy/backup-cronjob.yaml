@@ -1,0 +1,72 @@
+# Story 4.1 — the REUSABLE backup actor (ntfy reference). Replaces the Compose
+# offen/docker-volume-backup sidecar (configs/docker/docker-compose.yml:729-757), which does NOT
+# port to k8s (a sidecar cannot stop a peer pod). Preserved deltas: R2 path homelab-k3s-backup/ntfy/,
+# filename prefix ntfy-, ≤6h cadence, ~30-day retention. (AC3; FR19/FR22; AR16/AR17/AR18; NFR5)
+#
+# RWO multi-mount trap (Reconciliation 1): ntfy-data is RWO -> Longhorn attaches to one node.
+# This Job co-schedules onto the ntfy pod's node via podAffinity and mounts the PVC read-write
+# (online `sqlite3 .backup` needs the -wal/-shm files), writing the dump to an emptyDir /scratch —
+# NEVER back onto /data. The app is NOT scaled to 0 (online backup needs no quiesce). Operator-
+# confirmed house pattern 2026-06-18; 4.3 (navidrome SQLite) / 4.5 (karakeep SQLite) / 4.6 (miniflux
+# pg_dump) copy this with only the dump command + image changed.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ntfy-backup
+spec:
+  schedule: "40 */6 * * *"        # ≤6h (the freed offen slot); NFR5 steady-state cadence
+  timeZone: Asia/Seoul
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ntfy   # so podAffinity can target the same node as the app pod
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: ntfy
+                  topologyKey: kubernetes.io/hostname   # land on the node holding the RWO volume
+          containers:
+            - name: backup
+              # sqlite3 + rclone in one small image. PIN AT CUTOVER: replace with a digest
+              #   docker buildx imagetools inspect alpine:3.20
+              # // ponytail: runtime `apk add` floats the tool versions and needs egress to the
+              # alpine CDN — fine under today's allow-all; when the network-baseline default-deny
+              # lands, allow egress to the CDN + R2, or bake a pinned sqlite+rclone image (upgrade path).
+              image: alpine:3.20
+              command:
+                - /bin/sh
+                - -ceu
+                - |
+                  apk add --no-cache sqlite rclone ca-certificates tzdata
+                  ts=$(date +%Y-%m-%dT%H-%M-%S)
+                  # online, lock-safe — source stays live (no docker stop / no scale-down)
+                  sqlite3 /data/auth.db  ".backup /scratch/auth.db"
+                  sqlite3 /data/cache.db ".backup /scratch/cache.db"
+                  tar -C /scratch -czf "/scratch/ntfy-${ts}.tar.gz" auth.db cache.db
+                  rclone copy "/scratch/ntfy-${ts}.tar.gz" "r2:homelab-k3s-backup/ntfy/"
+                  # ~30-day retention (offen semantics). Prefer an R2 lifecycle rule if you'd rather
+                  # not give the cred delete scope. // ponytail: rclone delete is the lazy port.
+                  rclone delete --min-age 720h "r2:homelab-k3s-backup/ntfy/" || true
+              envFrom:
+                - secretRef:
+                    name: ntfy-backup-r2   # per-ns SealedSecret: R2 creds + rclone remote (sealedsecret.yaml)
+              volumeMounts:
+                - name: data
+                  mountPath: /data          # RW: online .backup needs -wal/-shm (Reconciliation 1)
+                - name: scratch
+                  mountPath: /scratch
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: ntfy-data
+            - name: scratch
+              emptyDir: {}

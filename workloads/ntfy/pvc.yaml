@@ -1,0 +1,17 @@
+# Story 4.1 — ntfy durable state (auth.db + cache.db) on Longhorn. RWO (single-node attach);
+# the backup CronJob co-locates onto the pod's node to share it (Reconciliation 1 / RWO trap).
+# Prune=false + Retain: ArgoCD must NEVER delete this and Longhorn keeps the volume if the PVC
+# is removed — this is real data, not disposable (AR15; architecture.md 803).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ntfy-data
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi   # auth.db + cache.db are small; grow via PR if cache pressure rises
