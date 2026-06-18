@@ -12,7 +12,7 @@ metadata:
     app.kubernetes.io/component: web   # per-component (kustomize labels: carry only shared identity)
 spec:
   replicas: 1
-  progressDeadlineSeconds: 120   # Recreate -> stuck rollout is a full outage; surface Degraded fast for git-revert
+  progressDeadlineSeconds: 180   # > the 150s startupProbe budget (30×5), else a slow WAL-replay/reindex first boot false-Degrades; still surfaces a truly stuck rollout fast for git-revert
   strategy:
     type: Recreate
   selector:
