@@ -48,4 +48,8 @@ regexes = [
   # catch real .local/.lan hosts; this exempts only the k8s constant so manifests can reference
   # *.svc.cluster.local (e.g. cert-manager DNS-01 self-check notes) without tripping the gate.
   '''(?i)\bcluster\.local\b''',
+  # `0.0.0.0` is the unspecified / bind-all address — a fixed constant that reveals no topology and
+  # can never be one of the house's real IPs. Same safety class as cluster.local. Exempts service
+  # bind configs (e.g. ytdlp-api config.yml `host: 0.0.0.0`) without weakening raw-ipv4 for real IPs.
+  '''\b0\.0\.0\.0\b''',
 ]
