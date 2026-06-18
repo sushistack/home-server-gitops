@@ -104,6 +104,21 @@
       delay: 10
       until: k3s_node_ready.rc == 0
 
+    - name: Drop the Traefik entryPoints HelmChartConfig into k3s's auto-deploy manifests dir (Story 4.4)
+      # Anytype needs raw-TCP(33010)+QUIC/UDP(33020) entryPoints, which are Traefik *static* config —
+      # settable ONLY on the k3s-bundled traefik HelmChart, NOT via a runtime CRD. This is the
+      # k3s-native, outside-ArgoCD path (matches the "Traefik controller stays k3s-owned" boundary).
+      # k3s's addon controller watches this dir and (re)applies the HelmChartConfig, which merge-
+      # patches the traefik HelmChart values. Idempotent: re-running just re-copies the same file.
+      # CAVEAT: this play targets the cluster-init server (node 1) ONLY. The HelmChartConfig is a
+      # cluster-scoped CR so one copy suffices while node 1 lives — but the file is NOT on nodes 2/3.
+      # If the cluster is ever re-bootstrapped from another node, re-run this play, or the anytype
+      # TCP/UDP entryPoints silently vanish on the next traefik reconcile.
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../infra/traefik/traefik-helmchartconfig.yaml"
+        dest: /var/lib/rancher/k3s/server/manifests/traefik-config.yaml
+        mode: '0644'
+
     - name: Read the cluster node-token (the shared join secret for nodes 2 & 3)
       ansible.builtin.slurp:
         src: /var/lib/rancher/k3s/server/node-token
