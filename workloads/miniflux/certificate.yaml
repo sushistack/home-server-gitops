@@ -1,0 +1,16 @@
+# Story 4.6 — per-host production TLS for miniflux. cert-manager issues a browser-trusted cert for
+# the single host ${SECRET:DOMAIN_RSS} from the PRODUCTION DNS-01 ClusterIssuer (letsencrypt-prod,
+# Story 2.4) into the `miniflux-tls` Secret in THIS namespace, served by the websecure IngressRoute.
+# Per-host cert (NOT a shared wildcard) is the copyable Epic 4 pattern — rationale in ntfy's
+# certificate.yaml / stateful-cutover.md. Renewal is automatic (cert-manager renewBefore).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: miniflux-tls
+spec:
+  secretName: miniflux-tls
+  dnsNames:
+    - "${SECRET:DOMAIN_RSS}"   # single public host (tokenized); single-label child of the public zone
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer

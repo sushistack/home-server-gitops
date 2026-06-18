@@ -24,6 +24,20 @@ Running log of load-bearing decisions. One line each; link the story.
   decommissioned** (rollback = flip the stream forward back; Story 5.4 does the functional retire).
   | [runbook](runbooks/anytype.md)
 
+## Miniflux cutover — Postgres logical dump (Story 4.6)
+
+- 2026-06-18 | miniflux migrated to k3s as the **one Postgres service** — backup/restore + cutover
+  ingest are **logical `pg_dump -Fc`/`pg_restore` over the network**, NOT a tar/rsync of
+  `/var/lib/postgresql` and NOT a Longhorn volume snapshot (Reconciliation 1). `pg_dump` is
+  online-consistent (MVCC) so the backup CronJob needs **no quiesce, no scale-down, no PVC mount, no
+  podAffinity** — the RWO multi-mount trap is SQLite/file-specific. App+DB are one Application in the
+  `miniflux` ns; `DATABASE_URL` (FQDN host + password) lives in the SealedSecret; app egress 80/443 is
+  opened for feed fetch (default-deny otherwise stops refresh). Client/server pinned `postgres:18`
+  (AR29). **Manifests + runbook + backup actor authored & validated; the live flip of `${SECRET:DOMAIN_RSS}`
+  (NPM→Traefik) + sealing real `DATABASE_URL`/R2 creds + the AC1 verified-restore are operator-run**
+  (≤10min window). Compose miniflux + miniflux-db **PARKED not decommissioned** (rollback = flip the
+  tunnel route back; Epic 5 Story 5.4 does the functional decommission). | [ADR-0008](adr/ADR-0008-miniflux-postgres-logical-dump.md)
+
 ## ytdlp-api migration (Story 3.1)
 
 - 2026-06-18 | ytdlp-api deployed to k3s (golden-path proof: `_template/` copy → ApplicationSet →

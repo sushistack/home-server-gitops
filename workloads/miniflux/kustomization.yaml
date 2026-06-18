@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - db-deployment.yaml
+  - db-service.yaml
+  - deployment.yaml
+  - service.yaml
+  - configmap.yaml
+  - sealed-secret.yaml     # STUBS — operator seals real values at cutover (kubeseal recipe in-file)
+  - ingressroute.yaml      # APP host (web->websecure + redirect); tokenized ${SECRET:DOMAIN_RSS}
+  - certificate.yaml       # per-host cert-manager Certificate -> miniflux-tls (letsencrypt-prod)
+  - networkpolicy.yaml     # default-deny egress + DB isolation + feed-fetch egress (Reconciliation 3)
+  - backup-cronjob.yaml    # pg_dump -Fc -> R2 (the Postgres backup actor)
+# NOT included on purpose:
+#   _cutover/   -> one-shot pg_restore Job, applied by hand during the cutover (must NOT be ArgoCD-managed)
+
+# Use `labels:` (newer field), NEVER commonLabels (pollutes selectors -> immutable conflict) and
+# NEVER namePrefix (breaks the name+ns binding SealedSecrets are sealed against).
+#
+# TWO-COMPONENT CAVEAT: app.kubernetes.io/name is DELIBERATELY NOT here — it differs per component
+# (miniflux vs miniflux-db vs miniflux-backup) and is hand-written on each pod template + selector.
+# Putting it in this shared block would overwrite the db/backup pod labels and break their selectors.
+# /component is likewise per-manifest. Only the truly-shared three are global here.
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/instance: miniflux
+      app.kubernetes.io/part-of: miniflux
+      app.kubernetes.io/managed-by: argocd

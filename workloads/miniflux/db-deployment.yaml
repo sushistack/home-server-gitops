@@ -1,0 +1,72 @@
+# Story 4.6 — miniflux-db (Postgres) on k3s (ports configs/docker/docker-compose.yml:507-531).
+# SINGLE-WRITER-ON-ONE-PGDATA: exactly the SQLite-WAL rule of 4.1, applied to Postgres. strategy
+# MUST be Recreate (two postgres processes on one PGDATA dir corrupts the cluster — never
+# RollingUpdate) and terminationGracePeriodSeconds 30 gives Postgres a clean shutdown checkpoint.
+# (AC4 / AR14; architecture.md 470-471, 585-586)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: miniflux-db
+  labels:
+    app.kubernetes.io/name: miniflux-db
+    app.kubernetes.io/component: db
+spec:
+  replicas: 1
+  # Recreate tears the OLD pod down before the new one starts, so a stuck rollout is a FULL DB
+  # outage (no second postgres ever shares PGDATA). 120s makes ArgoCD surface Degraded fast.
+  progressDeadlineSeconds: 120
+  strategy:
+    type: Recreate
+  # Hand-written selector (kept out of kustomize labels) so it stays immutable across re-applies.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: miniflux-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: miniflux-db
+        app.kubernetes.io/component: db
+    spec:
+      terminationGracePeriodSeconds: 30   # clean Postgres shutdown checkpoint (= Compose stop_grace)
+      containers:
+        - name: postgres
+          # AR29 carve-out: postgres:18 stays a MAJOR tag (not digest-pinned) — the pg_dump client in
+          # the backup CronJob must match this server major (18→18). Bumping the major is a deliberate
+          # migration, not a silent floating tag.
+          image: postgres:18
+          ports:
+            - containerPort: 5432
+          env:
+            - name: TZ
+              value: Asia/Seoul
+          # POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD come from the SealedSecret (never inline).
+          envFrom:
+            - secretRef:
+                name: miniflux-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi   # memory limit only — NO cpu limit (avoids CFS throttling).
+          # Ports the Compose healthcheck `pg_isready -U miniflux -d miniflux` (AR31).
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "miniflux", "-d", "miniflux"]
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "miniflux", "-d", "miniflux"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              # postgres:18 changed the default data-dir layout; the Compose source mounts the volume
+              # at /var/lib/postgresql (NOT /var/lib/postgresql/data) — preserve that exactly or the
+              # cluster won't initialize/find its data (Reconciliation 4). PGDATA is left at the image
+              # default; initdb places the cluster under this mount.
+              mountPath: /var/lib/postgresql
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: miniflux-db-data

@@ -1,0 +1,128 @@
+# Story 4.6 — NetworkPolicy for the miniflux namespace (AC4 / Reconciliation 3 / AR21).
+#
+# WHY THIS SHAPE: miniflux is an RSS FETCHER — it makes outbound HTTPS/HTTP to arbitrary feed hosts
+# on a schedule. The trap (same class as ytdlp-api's YouTube egress, Story 3.1): a default-deny that
+# forgets egress 80/443 + DNS SILENTLY stops feed refresh. So the policy is EGRESS-controlled +
+# DB-ISOLATED:
+#   - every pod's egress is default-denied (NP1), then re-opened per role (NP2/NP4);
+#   - the DB only accepts ingress from the app + backup pods (NP3) — never public, never anything else;
+#   - the APP's INGRESS is intentionally left OPEN (no Ingress policy selects it) so Traefik (k3s
+#     ships it in kube-system, NOT GitOps-managed here) can reach :8080. Locking app-ingress would
+#     mean guessing Traefik's namespace labels — untestable from the repo and a public-route outage
+#     if wrong. The app is a public web service anyway; the DB is the asset that must be isolated.
+#
+# k3s ENFORCES NetworkPolicy (bundled kube-router controller). The cluster is allow-all TODAY (no
+# baseline policy exists), so THIS is the first enforced policy in the miniflux ns.
+# // ponytail: egress to 0.0.0.0/0 on 80/443 — feeds live anywhere on the public internet; add an
+# // ipBlock `except` for RFC1918 only if east-west isolation ever becomes a requirement.
+---
+# NP1 — default-deny EGRESS for every pod in the namespace (forces each role to declare egress).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+---
+# NP2 — APP egress: DNS (kube-system CoreDNS) + Postgres (to miniflux-db) + 80/443 to the internet
+# (feed fetch — the Reconciliation 3 allow). App INGRESS is left open (no Ingress policyType here).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: miniflux-app-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: miniflux
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: miniflux-db
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+---
+# NP3 — DB ingress: ONLY from the app and the backup CronJob pods, on 5432. (DB egress stays denied
+# by NP1 — Postgres makes no outbound connections.) The DB is never publicly exposed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: miniflux-db-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: miniflux-db
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: miniflux
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: miniflux-backup
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# NP4 — BACKUP CronJob egress: DNS + Postgres (to miniflux-db) + 80/443 (Debian apt mirror for the
+# rclone install + R2 upload over https). pg_dump connects to the DB by FQDN over TCP — so DNS + 5432
+# are both required, and (unlike ntfy's SQLite backup) NO PVC mount / NO podAffinity is needed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: miniflux-backup-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: miniflux-backup
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: miniflux-db
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443

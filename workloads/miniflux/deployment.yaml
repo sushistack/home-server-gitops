@@ -1,0 +1,65 @@
+# Story 4.6 — miniflux app on k3s (ports configs/docker/docker-compose.yml:477-504). Single Go
+# binary, Postgres-only, stateless (ALL state is in miniflux-db) — so strategy: Recreate is fine
+# (single replica). The app retries the DB on boot, so no init-container gating is needed; let
+# restart/backoff handle DB-not-ready-yet (the Compose `depends_on: service_healthy` is a soft dep
+# in k8s). Non-secret config via the miniflux-config ConfigMap; DATABASE_URL via the SealedSecret.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: miniflux
+  labels:
+    app.kubernetes.io/name: miniflux
+    app.kubernetes.io/component: app
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 120
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: miniflux
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: miniflux
+        app.kubernetes.io/component: app
+    spec:
+      containers:
+        - name: miniflux
+          # miniflux/miniflux is :latest in Compose (AR29 forbids :latest) -> pinned to the EXACT
+          # version running live at cutover (2.3.1), so the restored DB needs no cross-version
+          # migration delta. Digest captured 2026-06-18:
+          #   miniflux/miniflux@sha256:42f14382a035e9d9bbc33910ca53f72d47177f75c3c638d2c5a85adf5582d538
+          image: miniflux/miniflux:2.3.1
+          ports:
+            - containerPort: 8080
+          # Non-secret env from the ConfigMap; DATABASE_URL + POSTGRES_* from the SealedSecret.
+          # Order matters only if keys collide — they don't (config = BASE_URL/RUN_MIGRATIONS/...;
+          # secret = DATABASE_URL/POSTGRES_*).
+          envFrom:
+            - configMapRef:
+                name: miniflux-config
+            - secretRef:
+                name: miniflux-secrets
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi   # memory limit only — NO cpu limit (avoids CFS throttling).
+          # Ports the Compose healthcheck `/usr/bin/miniflux -healthcheck auto` (AR31). startupProbe
+          # holds liveness back while the app connects to Postgres + runs migrations on boot.
+          startupProbe:
+            httpGet:
+              path: /healthcheck
+              port: 8080
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthcheck
+              port: 8080

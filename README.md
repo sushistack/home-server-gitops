@@ -53,6 +53,7 @@ by the [`adr-link-check`](.github/workflows/adr-link-check.yml) CI gate.
 - [ADR-0005 — Traefik + cert-manager DNS-01, cloudflared per-host cutover](docs/adr/ADR-0005-ingress-tls.md)
 - [ADR-0006 — One public-default repo, render-time tokens + a two-layer gate](docs/adr/ADR-0006-exposure-model.md)
 - [ADR-0007 — Self-scaffolded ArgoCD app-of-apps (bounded), not an adopted template](docs/adr/ADR-0007-gitops-tool.md)
+- [ADR-0008 — Miniflux cutover: Postgres logical dump/restore, not a volume snapshot](docs/adr/ADR-0008-miniflux-postgres-logical-dump.md)
 
 One-line decision log: [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
