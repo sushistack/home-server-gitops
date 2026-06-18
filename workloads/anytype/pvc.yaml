@@ -1,0 +1,35 @@
+# Story 4.4 — durable state on Longhorn, ONE PVC per component.
+#   - anytype-data       : any-sync BadgerDB/leveldb + node identity (peerId/networkId + keys)
+#   - anytype-heart-data : heart account cache (KV)
+# RWO (single-node attach); the backup CronJob co-locates onto each pod's node to share it (the RWO
+# trap — see backup-cronjob.yaml). Prune=false + the SC's Retain reclaim: ArgoCD must NEVER delete
+# these and Longhorn keeps the volume even if the PVC is removed. This is REAL user data — and for
+# anysync it is literally the node identity every client depends on (Reconciliation 3). (AR15)
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: anytype-data
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 5Gi   # BadgerDB + object/file index; grow via PR if it fills
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: anytype-heart-data
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi   # account cache; grow via PR

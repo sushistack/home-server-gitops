@@ -1,0 +1,20 @@
+# Story 4.6 — miniflux-db durable Postgres data dir on Longhorn. RWO (single-node attach), held by
+# the miniflux-db pod; the backup CronJob co-locates onto the same node (RWO multi-mount trap, see
+# backup-cronjob.yaml / stateful-cutover.md). Prune=false + Retain: ArgoCD must NEVER delete this and
+# Longhorn keeps the volume if the PVC is removed — real data, not disposable. (AR15; architecture.md)
+#
+# This PVC is initialized EMPTY by postgres:18 (initdb) and loaded LOGICALLY via pg_restore at cutover
+# (Reconciliation 1) — it is NOT an rsync of the Compose /var/lib/postgresql dir.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: miniflux-db-data
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi   # feeds/entries DB is small; grow via PR if entry retention rises

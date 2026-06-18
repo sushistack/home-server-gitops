@@ -2,6 +2,42 @@
 
 Running log of load-bearing decisions. One line each; link the story.
 
+## Anytype cutover — non-HTTP TCP/UDP edge + file-class BadgerDB quiesce (Story 4.4)
+
+- 2026-06-18 | anytype migrated to k3s as **one logical service / two components / one namespace**
+  under a **hand-written ArgoCD Application** (`argocd/apps/anytype.yaml`, excluded from the workloads
+  ApplicationSet) — the documented exception, because any-sync is **raw TCP 33010 + QUIC/UDP 33020**,
+  NOT HTTP: it is served by Traefik **IngressRouteTCP/UDP** on dedicated entryPoints declared via a
+  **k3s-owned HelmChartConfig** (`infra/traefik/`, dropped by ansible into k3s's auto-deploy dir —
+  OUTSIDE ArgoCD, same boundary as the Traefik controller). The public flip is the **33010/33020
+  stream forward (NPM Stream / port-forward) NPM→Traefik**, NOT the cloudflared HTTP split.
+  Store is **BadgerDB/leveldb (file-class, NOT SQLite)** with no online dump → backup is a **scale-to-0
+  CronJob** (co-schedule on the app node, `kubectl scale --replicas=0`, tar `/data` → R2, trap scales
+  back up) needing a `deployments/scale: patch` Role — NOT the `sqlite3 .backup` path. **🔴 The node
+  identity (peerId/networkId + keys) IS the data**, hardcoded by every client → cutover is a **copy of
+  `/data`, never a fresh init**; identity must round-trip and is verified before the edge flip.
+  `anytype-heart` (REST :31009) is internal-only (ClusterIP, FQDN for 4.5/4.7 consumers); private
+  heart image → `ghcr-sushistack` imagePullSecret; public any-sync-bundle → none; both pinned by
+  digest. **Manifests + Traefik entryPoints + file-class backup actor + runbook authored & validated;
+  the LIVE quiesce+copy+identity-verify + TCP/UDP edge flip + sealing real MNEMONIC/R2 creds + pinning
+  the live heart digest are operator-run** (≤10min window). Compose anytype/anytype-heart **PARKED not
+  decommissioned** (rollback = flip the stream forward back; Story 5.4 does the functional retire).
+  | [runbook](runbooks/anytype.md)
+
+## Miniflux cutover — Postgres logical dump (Story 4.6)
+
+- 2026-06-18 | miniflux migrated to k3s as the **one Postgres service** — backup/restore + cutover
+  ingest are **logical `pg_dump -Fc`/`pg_restore` over the network**, NOT a tar/rsync of
+  `/var/lib/postgresql` and NOT a Longhorn volume snapshot (Reconciliation 1). `pg_dump` is
+  online-consistent (MVCC) so the backup CronJob needs **no quiesce, no scale-down, no PVC mount, no
+  podAffinity** — the RWO multi-mount trap is SQLite/file-specific. App+DB are one Application in the
+  `miniflux` ns; `DATABASE_URL` (FQDN host + password) lives in the SealedSecret; app egress 80/443 is
+  opened for feed fetch (default-deny otherwise stops refresh). Client/server pinned `postgres:18`
+  (AR29). **Manifests + runbook + backup actor authored & validated; the live flip of `${SECRET:DOMAIN_RSS}`
+  (NPM→Traefik) + sealing real `DATABASE_URL`/R2 creds + the AC1 verified-restore are operator-run**
+  (≤10min window). Compose miniflux + miniflux-db **PARKED not decommissioned** (rollback = flip the
+  tunnel route back; Epic 5 Story 5.4 does the functional decommission). | [ADR-0008](adr/ADR-0008-miniflux-postgres-logical-dump.md)
+
 ## ytdlp-api migration (Story 3.1)
 
 - 2026-06-18 | ytdlp-api deployed to k3s (golden-path proof: `_template/` copy → ApplicationSet →

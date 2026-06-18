@@ -1,0 +1,10 @@
+# Story 4.4 — Anytype: ONE logical service, TWO coupled components, ONE namespace.
+#   - anytype       : any-sync-bundle (coordinator+sync+filenode+consensus) — raw TCP 33010 + QUIC/UDP 33020
+#   - anytype-heart : gRPC middleware + JSON REST :31009 — INTERNAL only (loopback in Compose)
+# Both live here under ONE hand-written ArgoCD Application (argocd/apps/anytype.yaml) — the
+# documented per-directory exception, because anytype needs IngressRouteTCP/UDP on dedicated
+# Traefik entryPoints that the uniform `workloads` ApplicationSet template can't express.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: anytype

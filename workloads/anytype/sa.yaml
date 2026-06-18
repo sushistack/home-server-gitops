@@ -1,0 +1,7 @@
+# Story 4.4 — ServiceAccount for the file-class backup CronJobs. ONE SA for both component jobs
+# (same namespace, same scale/get rights). File-class scale-to-0 actors need an SA with RBAC to
+# patch the Deployments' scale subresource (rbac.yaml); SQLite online-dump backups do NOT.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: anytype-backup

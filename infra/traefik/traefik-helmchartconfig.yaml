@@ -1,0 +1,43 @@
+# Story 4.4 — Traefik static entryPoints for Anytype's raw TCP + QUIC/UDP.
+#
+# WHY THIS IS NOT IN ArgoCD: Traefik on k3s is owned by k3s itself (installed as a bundled
+# `HelmChart` CR — see ansible/playbook.yml, `NO --disable=traefik`). entryPoints are Traefik
+# *static* config; they can ONLY be set on the HelmChart values, not via a runtime CRD. So this
+# HelmChartConfig lives with the cluster install and is dropped into k3s's auto-deploy manifests
+# dir (/var/lib/rancher/k3s/server/manifests/) by ansible — the SAME boundary the architecture
+# draws for the Traefik CRD/controller ("k3s owns it; only IngressRoute *resources* are ArgoCD-
+# managed"). The IngressRouteTCP/UDP that BIND to these entryPoints DO live in ArgoCD
+# (workloads/anytype/). [architecture.md: "Traefik CRD/controller stays outside ArgoCD"]
+#
+# A HelmChartConfig named `traefik`/kube-system MERGE-patches the bundled traefik HelmChart values.
+# `ports.<name>` both (a) declares a static entryPoint `<name>` and (b) adds a port to the Traefik
+# LoadBalancer Service so k3s ServiceLB (klipper) publishes it at the node edge — that is how the
+# public 33010/33020 forward reaches Traefik (no new LB invented).
+# // ponytail: reuse k3s ServiceLB exactly as 2.x exposed web/websecure; just add two ports.
+#
+# Anytype speaks raw protocols (NOT TLS) so there is NO SNI to route on:
+#   - anytype-tcp : raw TCP 33010 -> IngressRouteTCP match HostSNI(`*`)
+#   - anytype-udp : QUIC/UDP 33020 -> IngressRouteUDP (UDP has no host routing at all)
+#
+# `expose: {default: true}` is the current traefik-chart form (the old bare-bool `expose: true`
+# was removed ~chart v28; k3s v1.35 ships v3.x). exposedPort = the Service/edge port.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    ports:
+      anytype-tcp:
+        port: 33010
+        exposedPort: 33010
+        expose:
+          default: true
+        protocol: TCP
+      anytype-udp:
+        port: 33020
+        exposedPort: 33020
+        expose:
+          default: true
+        protocol: UDP

@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Story 4.4 — ONE logical service, TWO components, ONE namespace. Applied by a HAND-WRITTEN
+# ArgoCD Application (argocd/apps/anytype.yaml), NOT the `workloads` ApplicationSet (which is
+# excluded for this dir) — the documented per-directory exception (IngressRouteTCP/UDP).
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - configmap.yaml
+  - sealedsecret.yaml        # STUBS — operator seals real values at cutover (see file header)
+  - sa.yaml
+  - rbac.yaml
+  - deployment-anysync.yaml
+  - deployment-heart.yaml
+  - service-anysync.yaml
+  - service-heart.yaml
+  - ingressroute-tcp.yaml
+  - ingressroute-udp.yaml
+  - backup-cronjob.yaml
+# NOT included on purpose:
+#   _cutover/   -> one-shot ingest Job, applied BY HAND during the cutover (must NOT be ArgoCD-managed)
+
+# `labels:` (never commonLabels — pollutes selectors → immutable conflict; never namePrefix — breaks
+# the SealedSecret name+ns binding). Only the SHARED identity goes here so it applies uniformly to
+# BOTH components. `app.kubernetes.io/name` + `/component` are NOT here because they DIFFER per
+# component (anytype vs anytype-heart) — they're hand-written inline on each resource. `part-of:
+# anytype` is what ties the two components to the one logical service (AC1). includeSelectors:false
+# keeps these out of the hand-written selectors/matchLabels.
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/instance: anytype
+      app.kubernetes.io/part-of: anytype
+      app.kubernetes.io/managed-by: argocd

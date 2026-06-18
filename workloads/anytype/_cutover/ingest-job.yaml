@@ -1,0 +1,55 @@
+# Story 4.4 — ONE-SHOT ingest Job. THROWAWAY scaffolding: NOT in kustomization.yaml, so ArgoCD never
+# manages it (// ponytail: let ArgoCD own this and it fights you on the next sync). It parks a pod
+# holding BOTH anytype PVCs open so the operator can copy the two quiesced /data dirs from the live
+# Compose host into them, then exits. Run BEFORE the steady-state Deployments exist (or with them
+# scaled to 0) — RWO means the volumes can't be held by two pods on different nodes.
+#
+# 🔴 IDENTITY PRESERVATION (Reconciliation 3): this is a COPY of /data, never a fresh init. The
+# copied any-sync /data carries the node peerId/networkId + signing keys EVERY client hardcodes.
+# Verify they round-trip (steps below) before flipping the edge — a new identity silently orphans
+# every client with no error.
+#
+# CUTOVER SEQUENCE (live, operator-run; full procedure in docs/runbooks/anytype.md):
+#   # 0) pre-lower the public DNS/edge TTL for anytype.eli.kr (rollback window)
+#   # 1) quiesce the live source so BadgerDB flushes cleanly, and RECORD the identity:
+#   docker stop anytype anytype-heart
+#   grep -E 'networkId|peerId' configs/docker/anytype-client-config.yml   # expected identity
+#   # 2) seal the real secrets (sealedsecret.yaml recipe) and pin the heart digest (deployment-heart.yaml)
+#   # 3) park the ingest pod and copy BOTH data dirs in:
+#   kubectl apply -f workloads/anytype/_cutover/ingest-job.yaml
+#   pod=$(kubectl -n anytype get pod -l job-name=anytype-ingest -o name | head -1)
+#   kubectl -n anytype cp ./data/anytype/.       "${pod#pod/}:/data-anysync/"
+#   kubectl -n anytype cp ./data/anytype-heart/. "${pod#pod/}:/data-heart/"
+#   kubectl -n anytype exec "${pod#pod/}" -- sh -c 'ls -la /data-anysync /data-heart'
+#   kubectl -n anytype delete -f workloads/anytype/_cutover/ingest-job.yaml
+#   # 4) let ArgoCD bring up the Deployments against the populated PVCs; VERIFY identity preserved:
+#   #    - k3s any-sync logs report the SAME peerId/networkId as step 1
+#   #    - nc -z anytype-heart.anytype.svc.cluster.local 31009 (in-cluster) listens
+#   # 5) flip the public 33010/TCP + 33020/UDP edge (NPM Stream / port-forward) NPM -> Traefik;
+#   #    a real client syncs within the ≤10-min window; else flip the edge back to Compose.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: anytype-ingest
+  namespace: anytype
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: ingest
+          image: alpine:3.20   # only needs a shell + sleep for `kubectl cp`; pin by digest if desired
+          command: ["/bin/sh", "-c", "echo 'ready for kubectl cp into /data-anysync and /data-heart; sleeping'; sleep 3600"]
+          volumeMounts:
+            - name: anysync-data
+              mountPath: /data-anysync
+            - name: heart-data
+              mountPath: /data-heart
+      volumes:
+        - name: anysync-data
+          persistentVolumeClaim:
+            claimName: anytype-data
+        - name: heart-data
+          persistentVolumeClaim:
+            claimName: anytype-heart-data

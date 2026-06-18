@@ -20,6 +20,11 @@ spec:
           # Without this exclude the generator creates a never-syncable Application for it.
           - path: workloads/_template
             exclude: true
+          # anytype is the HAND-WRITTEN exception (Story 4.4): IngressRouteTCP/UDP on dedicated
+          # entryPoints, which this uniform template can't express. Its Application lives at
+          # argocd/apps/anytype.yaml; without this exclude BOTH would create an App named `anytype`.
+          - path: workloads/anytype
+            exclude: true
   template:
     metadata:
       name: '{{.path.basename}}'

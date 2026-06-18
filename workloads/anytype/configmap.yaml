@@ -1,0 +1,16 @@
+# Story 4.4 — non-secret env for both components (the non-secret half of Compose .env.apps/.env.common
+# anytype keys). The SECRET half (ANYTYPE_MNEMONIC, ANYTYPE_ACCOUNT_ID) lives in the SealedSecret, NOT
+# here. Literal ConfigMap with a STABLE name (no generator hash) so the Deployments envFrom it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: anytype-config
+data:
+  TZ: "Asia/Seoul"
+  # any-sync-bundle init addrs (Compose ANY_SYNC_BUNDLE_INIT_EXTERNAL_ADDRS). Consulted ONLY on a
+  # first-time init — with /data copied verbatim (Reconciliation 3) the bundle reuses its existing
+  # config and never re-inits, so this can't change the live peerId. Kept to mirror Compose 1:1.
+  ANY_SYNC_BUNDLE_INIT_EXTERNAL_ADDRS: "anytype.eli.kr,10.0.0.20"
+  # Cross-namespace address of heart for FUTURE consumers (karakeep-anytype-bridge 4.5, n8n 4.7).
+  # Short names don't resolve across namespaces — consumers MUST use this FQDN. (AR28)
+  ANYTYPE_HEART_ADDR: "anytype-heart.anytype.svc.cluster.local:31009"

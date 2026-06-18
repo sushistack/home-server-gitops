@@ -1,0 +1,55 @@
+# Story 4.6 — ONE-SHOT cutover restore helper (stateful-cutover.md Step 3, Postgres variant).
+# THROWAWAY scaffolding: NOT listed in workloads/miniflux/kustomization.yaml, so ArgoCD never manages
+# it (// ponytail: let ArgoCD own this and it fights you on the next sync). Apply by hand, delete after.
+#
+# WHY A PARKED pg-client POD (not an rsync/cp into a PVC like ntfy): the Postgres data move is
+# LOGICAL — pg_dump from live Compose -> pg_restore into the k3s Postgres OVER THE NETWORK
+# (Reconciliation 1). This pod is just a postgres:18 client with the dump copied in; it does NOT
+# mount the data PVC.
+#
+# CUTOVER ORDER (the app must NOT own the schema before the restore — avoids the selfHeal race
+# Story 4.1 hit; full detail in docs/runbooks/miniflux.md):
+#   # 0) on the LIVE Compose host — take the consistent logical dump:
+#   docker exec miniflux-db pg_dump -Fc -U miniflux -d miniflux > miniflux-cutover.dump
+#
+#   # 1) pause the app so it can't migrate the empty DB mid-restore:
+#   kubectl -n miniflux scale deploy/miniflux --replicas=0
+#   #    (ArgoCD selfHeal will undo this — either disable auto-sync for `miniflux` during the window,
+#   #     or run the restore fast; --clean --if-exists below also makes the restore re-runnable.)
+#
+#   # 2) park this client pod and load the dump:
+#   kubectl apply -f workloads/miniflux/_cutover/restore-job.yaml
+#   pod=$(kubectl -n miniflux get pod -l job-name=miniflux-restore -o name | head -1)
+#   kubectl -n miniflux cp ./miniflux-cutover.dump "${pod#pod/}:/tmp/miniflux-cutover.dump"
+#   kubectl -n miniflux exec "${pod#pod/}" -- sh -c '
+#     pg_restore --clean --if-exists --no-owner -h miniflux-db.miniflux.svc.cluster.local \
+#       -U miniflux -d miniflux /tmp/miniflux-cutover.dump'
+#   #    PGPASSWORD is injected from miniflux-secrets (env below).
+#
+#   # 3) verify counts in-cluster, THEN bring the app back (RUN_MIGRATIONS=1 applies the new-version
+#   #    schema deltas on top of the restored data; CREATE_ADMIN=0 keeps the restored admin):
+#   kubectl -n miniflux exec "${pod#pod/}" -- sh -c '
+#     psql -h miniflux-db.miniflux.svc.cluster.local -U miniflux -d miniflux \
+#       -c "select count(*) from feeds;" -c "select count(*) from entries;"'
+#   kubectl -n miniflux scale deploy/miniflux --replicas=1   # (or re-enable ArgoCD auto-sync)
+#   kubectl -n miniflux delete -f workloads/miniflux/_cutover/restore-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: miniflux-restore
+  namespace: miniflux
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: restore
+          image: postgres:18   # pg_restore/psql client major == server major (18)
+          command: ["/bin/sh", "-c", "echo 'ready for kubectl cp + pg_restore; sleeping'; sleep 3600"]
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: miniflux-secrets
+                  key: POSTGRES_PASSWORD

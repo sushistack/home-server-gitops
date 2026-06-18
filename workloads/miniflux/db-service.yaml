@@ -1,0 +1,18 @@
+# Story 4.6 — miniflux-db ClusterIP. INTERNAL ONLY: there is NO IngressRoute for the DB (Postgres
+# is never publicly exposed). The app reaches it by FQDN miniflux-db.miniflux.svc.cluster.local:5432
+# (the DATABASE_URL host, in the SealedSecret — Reconciliation 2).
+apiVersion: v1
+kind: Service
+metadata:
+  name: miniflux-db
+  labels:
+    app.kubernetes.io/name: miniflux-db
+    app.kubernetes.io/component: db
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: miniflux-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

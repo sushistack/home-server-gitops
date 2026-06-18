@@ -1,0 +1,18 @@
+# Story 4.6 — miniflux non-secret app config (ports the non-secret half of docker-compose.yml:486-493).
+# Literal ConfigMap (stable name, no generator hash needed). The SECRET half — DATABASE_URL +
+# POSTGRES_* — lives in the SealedSecret (sealed-secret.yaml), NOT here (Reconciliation 2).
+#
+# DB coordinates (documentation only — the live connection uses DATABASE_URL from the SealedSecret,
+# whose host IS the FQDN below, satisfying AC2's "app reaches db by FQDN"):
+#   host = miniflux-db.miniflux.svc.cluster.local   port = 5432   db/user = miniflux
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: miniflux-config
+data:
+  # BASE_URL is tokenized (${SECRET:DOMAIN_RSS}) so no public host literal lands in Git — the render
+  # CMP substitutes the real host at ArgoCD sync time (same mechanism as the IngressRoute/Certificate).
+  BASE_URL: "https://${SECRET:DOMAIN_RSS}"
+  RUN_MIGRATIONS: "1"      # idempotent schema migration for the new app version; safe on every boot
+  CREATE_ADMIN: "0"        # admin already exists in the restored DB — must NOT recreate it
+  TZ: "Asia/Seoul"

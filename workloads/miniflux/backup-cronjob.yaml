@@ -1,0 +1,82 @@
+# Story 4.6 — the backup actor for the ONE Postgres service. Adapts the Story 4.1 reusable CronJob
+# (workloads/ntfy/backup-cronjob.yaml): same cadence/deadlines/retention/per-ns-R2-SealedSecret
+# shape, but the dump method and connection model differ —
+#
+#   KEY DIVERGENCE FROM THE SQLite TEMPLATE: pg_dump is a NETWORK client. It connects to
+#   miniflux-db.miniflux.svc.cluster.local:5432 over TCP — it does NOT open the data files. So this
+#   Job:
+#     • does NOT mount the miniflux-db-data PVC,
+#     • needs NO podAffinity (the RWO multi-mount trap is SQLite-file-specific — N/A here),
+#     • needs NO scale-down/quiesce — pg_dump is online-consistent via MVCC (architecture.md 475-481).
+#
+#   Image is postgres:18 (NOT alpine): the pg_dump CLIENT major MUST match the server major (18→18)
+#   or restore breaks. rclone is added at runtime via apt. (AC1; AR16; NFR5)
+#   // ponytail: runtime `apt install rclone` floats the version + needs 80/443 egress to the Debian
+#   // mirror; bake a pinned postgres18+rclone image if you'd rather drop the install + tighten egress.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: miniflux-backup
+spec:
+  schedule: "45 */6 * * *"        # ≤6h (NFR5 steady-state RPO); offset from ntfy's :40 slot
+  timeZone: Asia/Seoul
+  concurrencyPolicy: Forbid
+  # Bound the run: a hung pod + Forbid would silently suppress every later backup with no Failed job
+  # recorded. activeDeadlineSeconds kills it (-> Failed, visible); startingDeadlineSeconds caps how
+  # late a missed schedule may start.
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 900       # ~15 min ceiling: apt install + pg_dump + rclone copy
+      template:
+        metadata:
+          # NOT app.kubernetes.io/name: miniflux (that is the app Service selector — would add a dead
+          # endpoint). The NetworkPolicy (NP3/NP4) selects THIS label for db-ingress + egress allows.
+          labels:
+            app.kubernetes.io/name: miniflux-backup
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: postgres:18   # pg_dump client major == server major (18). PIN unchanged per AR29.
+              command:
+                - /bin/sh
+                - -ceu
+                - |
+                  apt-get update -qq
+                  apt-get install -y -qq --no-install-recommends rclone ca-certificates >/dev/null
+                  ts=$(date +%Y-%m-%dT%H-%M-%S)
+                  # -Fc custom format -> enables selective pg_restore. Online-consistent (MVCC): the
+                  # live DB keeps serving; no quiesce. Host is the FQDN (same as DATABASE_URL).
+                  pg_dump -Fc \
+                    -h miniflux-db.miniflux.svc.cluster.local \
+                    -U miniflux -d miniflux \
+                    -f "/scratch/miniflux-${ts}.dump"
+                  rclone copy "/scratch/miniflux-${ts}.dump" "r2:homelab-k3s-services-backup/miniflux/"
+                  # ~30-day retention (offen semantics). Dedicated services bucket -> this prefix only
+                  # holds our archives. // ponytail: rclone delete is the lazy port; swap to an R2
+                  # lifecycle rule if you'd rather not grant the cred delete scope.
+                  rclone delete --min-age 720h "r2:homelab-k3s-services-backup/miniflux/" || true
+              env:
+                # pg_dump auth: map the secret's POSTGRES_PASSWORD -> the libpq PGPASSWORD var.
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: miniflux-secrets
+                      key: POSTGRES_PASSWORD
+                # Bucket-scoped R2 token cannot ListBuckets/CreateBucket -> rclone's pre-PUT probe 403s.
+                # no_check_bucket skips it and PUTs straight to the existing bucket.
+                - name: RCLONE_CONFIG_R2_NO_CHECK_BUCKET
+                  value: "true"
+              envFrom:
+                - secretRef:
+                    name: miniflux-backup-r2   # per-ns SealedSecret: R2 creds + rclone remote
+              volumeMounts:
+                - name: scratch
+                  mountPath: /scratch
+          volumes:
+            - name: scratch
+              emptyDir: {}
