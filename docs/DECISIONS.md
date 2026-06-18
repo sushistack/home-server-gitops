@@ -39,11 +39,18 @@ Running log of load-bearing decisions. One line each; link the story.
   (AC3, not a cross-pod dep); private bridge image → `ghcr-sushistack` imagePullSecret; all four
   images pinned by digest. Host is **keep.\*, NOT karakeep.\*** (Reconciliation 4 — NextAuth cookie
   domain). Bridge → `anytype-heart` cross-ns (Reconciliation 1, anytype on k3s since 4.4); bridge is
-  optional for the core ACs. **Manifests + NetworkPolicy + sealed secrets + runbook authored,
-  built, gitleaks-clean & server-dry-run-validated; the LIVE quiesce→copy→verify→flip is operator-run**
-  (≤10min window, `_cutover/ingest-job.yaml`). Compose karakeep (5 containers) **PARKED not
-  decommissioned** (rollback = flip the `${SECRET:DOMAIN_KEEP}` cloudflared route back to NPM).
-  | [runbook](runbooks/karakeep.md)
+  optional for the core ACs. **CUTOVER EXECUTED LIVE 2026-06-19:** base applied → ingest job →
+  4 pods Ready → **AC2 isolation PROVEN** (from the bridge pod AND from another namespace,
+  chrome:9222 + meili:7700 are BLOCKED; from karakeep-web both CONNECT; DNS resolves everywhere;
+  bridge→`anytype-heart.anytype.svc:31009` reachable cross-ns). Window: quiesced prod (db.db drifts
+  even with no user action — background workers write, so the authoritative copy is taken
+  post-quiesce), re-ingested the fresh consistent copy, **0-loss verified byte-identical**
+  (`db.db` md5 `2b32ba8b…` == live; `bridge.sqlite` `f07fc0b2…` == live; 66 bookmarks served).
+  Public flip: CF tunnel ingress edited via API (`keep → https://10.0.0.101:443` inserted before the
+  `*.eli.kr→NPM` wildcard) → 200 from outside. LAN flip: OpenWrt local-DNS override (NEW entry
+  `keep → 10.0.0.101`, draw pattern) → direct path 200 with the LE-prod `keep.eli.kr` cert. Compose
+  karakeep (5 containers) **PARKED** (all exited; rollback = remove the CF rule + start Compose).
+  ArgoCD adopts on git push. | [runbook](runbooks/karakeep.md)
 
 ## Miniflux cutover — Postgres logical dump (Story 4.6)
 

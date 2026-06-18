@@ -1,0 +1,56 @@
+# Story 4.5 — ONE-SHOT ingest Job. THROWAWAY scaffolding: NOT in kustomization.yaml, so ArgoCD never
+# manages it (// ponytail: let ArgoCD own this and it fights you on the next sync). It parks a pod
+# holding BOTH stateful PVCs open so the operator can copy the two quiesced /data dirs from the live
+# Compose host into them, then exits. Run BEFORE the steady-state Deployments exist (or with them
+# scaled to 0) — RWO means the volumes can't be held by two pods on different nodes.
+#
+# meili is NOT ingested here: its index is REBUILDABLE (Reconciliation 5) — the fresh karakeep-meili
+# PVC reindexes from db.db on first web boot. Only db.db's dir and the bridge dedup map are copied.
+#
+# CUTOVER SEQUENCE (live, operator-run; full procedure in docs/runbooks/karakeep.md):
+#   # 0) pre-announce ≤10-min window; pre-lower the public DNS/edge TTL for keep.<public-zone> (rollback window)
+#   # 1) quiesce the live source so SQLite WAL checkpoints flush cleanly:
+#   docker stop karakeep-anytype-bridge karakeep-web    # bridge first (it calls web), then web
+#   # 2) on the live host, make app-consistent copies (or copy the whole dirs — source is stopped):
+#   #    ./data/karakeep/data  (db.db + queue.db + assets/)   and   ./data/karakeep-anytype-bridge (bridge.sqlite)
+#   # 3) park the ingest pod and copy BOTH data dirs in:
+#   kubectl apply -f workloads/karakeep/_cutover/ingest-job.yaml
+#   pod=$(kubectl -n karakeep get pod -l job-name=karakeep-ingest -o name | head -1)
+#   kubectl -n karakeep cp ./data/karakeep/data/.        "${pod#pod/}:/data-web/"
+#   kubectl -n karakeep cp ./data/karakeep-anytype-bridge/. "${pod#pod/}:/data-bridge/"
+#   kubectl -n karakeep exec "${pod#pod/}" -- sh -c 'ls -la /data-web /data-bridge'
+#   kubectl -n karakeep delete -f workloads/karakeep/_cutover/ingest-job.yaml
+#   # 4) let ArgoCD bring up the 4 Deployments; meili reindexes; confirm 4 pods Ready + App Synced/Healthy
+#   #    VERIFY (NFR4): login at the k3s endpoint + LIST BOOKMARKS = match live; spot-check an asset;
+#   #    confirm db.db byte-identical to the quiesced copy (0 bytes lost).
+#   # 5) flip keep.<public-zone> cloudflared route NPM -> Traefik; a real login+list verifies in-window;
+#   #    else flip the route back to Compose (rollback — Compose was never torn down).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: karakeep-ingest
+  namespace: karakeep
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      # chown both dirs to uid 1000 after the copy lands so the bridge (uid 1000) — and karakeep-web
+      # (also non-root) — can open their SQLite. `kubectl cp` writes as the pod's user; this mirrors
+      # the steady-state initContainer chown so the apps don't EACCES on first boot.
+      containers:
+        - name: ingest
+          image: alpine:3.20   # only needs a shell + sleep for `kubectl cp`; pin by digest if desired
+          command: ["/bin/sh", "-c", "echo 'ready for kubectl cp into /data-web and /data-bridge; sleeping'; sleep 3600"]
+          volumeMounts:
+            - name: web-data
+              mountPath: /data-web
+            - name: bridge-data
+              mountPath: /data-bridge
+      volumes:
+        - name: web-data
+          persistentVolumeClaim:
+            claimName: karakeep-data
+        - name: bridge-data
+          persistentVolumeClaim:
+            claimName: karakeep-bridge-data

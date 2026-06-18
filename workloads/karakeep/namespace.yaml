@@ -1,0 +1,12 @@
+# Story 4.5 — Karakeep: ONE logical service, FOUR components, ONE namespace.
+#   - karakeep-web            : bookmark manager + workers (SQLite on RWO) — the only public face
+#   - karakeep-meilisearch    : search index (master key) — INTERNAL, reachable ONLY from web
+#   - karakeep-chrome         : headless Chrome, unauthenticated CDP :9222 — INTERNAL, ONLY from web
+#   - karakeep-anytype-bridge : webhook -> anytype-heart object creator (dedup SQLite on RWO)
+# Picked up by the `workloads` ApplicationSet (HTTP IngressRoute, no TCP/UDP exception), so NO
+# hand-written argocd/apps/karakeep.yaml — unlike anytype (4.4). namespaceSelector targets in
+# NetworkPolicy use the auto-applied label kubernetes.io/metadata.name: karakeep.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: karakeep

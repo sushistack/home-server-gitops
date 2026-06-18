@@ -1,0 +1,51 @@
+# Story 4.5 — public route for karakeep-web ONLY (never meili/chrome/bridge): web -> websecure, TLS
+# from the karakeep-tls Secret (certificate.yaml); plain HTTP 301-redirects to HTTPS. Same shape as
+# navidrome/miniflux. Host is tokenized (${SECRET:DOMAIN_KEEP} = keep.<public-zone>, Reconciliation 4); the
+# render CMP substitutes at ArgoCD sync time. traefik.io/v1alpha1 (v3) — the old traefik.containo.us
+# API silently fails.
+#
+# CUTOVER switch (live, no file): the cloudflared tunnel origin for keep.<public-zone> is flipped NPM ->
+# Traefik (docs/runbooks/karakeep.md Step 6); flipping back is the rollback.
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: karakeep-redirect-https
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+# HTTPS (websecure :443) — serves karakeep-web with the cert-manager cert.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: karakeep
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`${SECRET:DOMAIN_KEEP}`)
+      kind: Rule
+      services:
+        - name: karakeep-web
+          port: 3000
+  tls:
+    secretName: karakeep-tls
+---
+# HTTP (web :80) — 301 to HTTPS via the redirect middleware.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: karakeep-redirect
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`${SECRET:DOMAIN_KEEP}`)
+      kind: Rule
+      middlewares:
+        - name: karakeep-redirect-https
+      services:
+        - name: karakeep-web   # required by the IngressRoute schema; middleware redirects before it is hit
+          port: 3000

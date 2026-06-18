@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Story 4.5 — ONE logical service, FOUR components, ONE namespace. Generated as ONE Application by
+# the `workloads` ApplicationSet (karakeep is HTTP via IngressRoute — no TCP/UDP exception, so it is
+# NOT excluded from the set the way anytype is).
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - configmap.yaml
+  - sealedsecret.yaml          # karakeep-secrets + karakeep-backup-r2 + ghcr-sushistack (REALLY sealed)
+  - deployment-web.yaml
+  - deployment-meilisearch.yaml
+  - deployment-chrome.yaml
+  - deployment-bridge.yaml
+  - services.yaml              # 4 ClusterIP Services (web/meili/chrome/bridge)
+  - networkpolicy.yaml         # the east-west boundary (AC2) — chrome/meili ingress ONLY from web
+  - ingressroute.yaml          # web -> websecure (keep.<public-zone>); TLS + HTTP->HTTPS redirect
+  - certificate.yaml           # per-host cert-manager Certificate -> karakeep-tls (letsencrypt-prod)
+  - backup-cronjob.yaml        # web db.db + bridge dedup sqlite -> R2 (online .backup, no scale-down)
+# NOT included on purpose:
+#   _cutover/   -> one-shot ingest Job, applied BY HAND during the cutover (must NOT be ArgoCD-managed)
+
+# `labels:` (never commonLabels — pollutes selectors -> immutable conflict; never namePrefix — breaks
+# the SealedSecret name+ns binding). Only the SHARED identity goes here so it applies to ALL four
+# components. `app.kubernetes.io/name` + `/component` are NOT here — they DIFFER per component and
+# every NetworkPolicy/Service selector targets `name`, so they are hand-written inline on each
+# resource. `part-of: karakeep` is what ties the four components to the one logical service (AC1).
+# includeSelectors:false keeps these out of the hand-written selectors/matchLabels.
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/instance: karakeep
+      app.kubernetes.io/part-of: karakeep
+      app.kubernetes.io/managed-by: argocd

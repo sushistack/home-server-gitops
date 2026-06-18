@@ -1,0 +1,110 @@
+# Story 4.5 — karakeep-anytype-bridge: receives karakeep's "ai tagged" webhook on :8080 and creates
+# Anytype objects via anytype-heart (ports docker-compose.yml:294-361). INTERNAL (no ingress).
+# Reaches karakeep-web :3000 (fetch bookmark) + anytype-heart :31009 cross-ns (Reconciliation 1).
+#
+# 🔴 Reconciliation 2 — the bridge owns a SECOND stateful SQLite: /data/bridge.sqlite is the
+# Karakeep-ID -> Anytype-object DEDUP map. Lose it and the next sync re-creates DUPLICATE Anytype
+# objects. So /data is a Longhorn RWO PVC (karakeep-bridge-data), strategy Recreate + grace 30s
+# (SQLite WAL invariant, AR14), and it is dumped to R2 (backup-cronjob.yaml).
+#
+# AC3 — init/permission via initContainer, NOT a cross-pod dependency: reproduces the Compose
+# `karakeep-anytype-bridge-data-fix` (busybox chown /data -> uid 1000, gated by
+# service_completed_successfully). A k8s initContainer runs to completion before the app container,
+# which is the correct mapping — Compose's service_completed_successfully has no cross-POD equivalent.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: karakeep-anytype-bridge
+  labels:
+    app.kubernetes.io/name: karakeep-anytype-bridge
+    app.kubernetes.io/component: bridge
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 120
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: karakeep-anytype-bridge
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: karakeep-anytype-bridge
+    spec:
+      terminationGracePeriodSeconds: 30   # SQLite WAL flush on shutdown (= Compose stop_grace)
+      # PRIVATE ghcr.io/sushistack/* image -> pull cred (same dockerconfigjson reused from anytype,
+      # re-sealed for ns karakeep). AR23.
+      imagePullSecrets:
+        - name: ghcr-sushistack
+      # AC3 — chown the Longhorn PVC to uid 1000 BEFORE the bridge (uid 1000) opens bridge.sqlite.
+      # A freshly-provisioned Longhorn volume mounts root:root 0755 -> EACCES on first SQLite open.
+      initContainers:
+        - name: data-fix
+          image: busybox:1.36
+          command:
+            - sh
+            - -xc
+            - |
+              owner="$(stat -c %u /data)"
+              if [ "$owner" != "1000" ]; then
+                echo "=====> Fixing /data ownership to uid 1000"
+                chown -R 1000:1000 /data
+              else
+                echo "=====> Nothing to do for /data"
+              fi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      securityContext:
+        runAsUser: 1000   # the bridge runs as uid 1000 (= Compose user: 1000); the PVC is chowned to match
+      containers:
+        - name: karakeep-anytype-bridge
+          # Custom PRIVATE build (home.server CD publishes :latest only). AR29 forbids :latest ->
+          # pinned by digest to the live image (docker inspect the live Compose host, 2026-06-19). Bumps via PR
+          # (GitOps-revertible); the digest must come from the ghcr image built by home.server deploy.yml.
+          image: ghcr.io/sushistack/home.server/karakeep-anytype-bridge@sha256:d39011c4002edb387ffda07cd12c7cfcd41cc8951627e415d90dab4714414afb
+          ports:
+            - containerPort: 8080
+          # Non-secret from ConfigMap; secrets (KARAKEEP_API_KEY, ANYTYPE_API_KEY, ANYTYPE_SPACE_ID,
+          # WEBHOOK_TOKEN) from the SealedSecret. PORT + DB_PATH are inline here (NOT in the shared
+          # ConfigMap) so they can never repoint karakeep-web — the only two component-specific keys
+          # that would collide. These are non-secret literals, so inline env: is fine (the
+          # envFrom-only rule is about SECRETS).
+          env:
+            - name: PORT
+              value: "8080"
+            - name: DB_PATH
+              value: "/data/bridge.sqlite"
+          envFrom:
+            - configMapRef:
+                name: karakeep-config
+            - secretRef:
+                name: karakeep-secrets
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          # Ports the Compose python-urlopen /health check (200 = OK) to an httpGet probe.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            failureThreshold: 20
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+          volumeMounts:
+            - name: data
+              mountPath: /data    # bridge.sqlite dedup map (Reconciliation 2)
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: karakeep-bridge-data

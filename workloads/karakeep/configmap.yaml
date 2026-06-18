@@ -1,0 +1,47 @@
+# Story 4.5 — non-secret env for all four components (the non-secret half of Compose .env.apps +
+# the inline `environment:` blocks, docker-compose.yml:172-361). The SECRET half (NEXTAUTH_SECRET,
+# MEILI_MASTER_KEY, OPENAI_API_KEY, KARAKEEP_API_KEY, ANYTYPE_API_KEY, ANYTYPE_SPACE_ID,
+# WEBHOOK_TOKEN) lives in the SealedSecret, consumed via a SEPARATE envFrom: secretRef. Stable name,
+# no generator hash, so every Deployment envFroms it. All four envFrom this map; each reads only the
+# keys it knows and ignores the rest (faithful to Compose, where every container env_file'd the same
+# .env.apps). The two keys that could REPOINT another component if shared — PORT and DB_PATH (bridge)
+# — are NOT here; they are inline env: on the bridge Deployment only.
+#
+# Docker-DNS names rewritten to k8s Service FQDNs (AR28) — short names don't cross namespaces, and
+# even in-ns the FQDN is the documented form.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: karakeep-config
+data:
+  TZ: "Asia/Seoul"
+  # --- karakeep-web ---
+  DATA_DIR: "/data"
+  MEILI_ADDR: "http://karakeep-meilisearch.karakeep.svc.cluster.local:7700"
+  BROWSER_WEB_URL: "http://karakeep-chrome.karakeep.svc.cluster.local:9222"
+  # Reconciliation 4: the live host is keep.<public-zone> (NOT karakeep.<public-zone>). NextAuth's cookie domain
+  # MUST match the external host or login breaks. Tokenized (${SECRET:DOMAIN_KEEP}) so no public host
+  # literal lands in Git — the render CMP substitutes the real host at ArgoCD sync time (same as the
+  # IngressRoute/Certificate; miniflux BASE_URL precedent).
+  NEXTAUTH_URL: "https://${SECRET:DOMAIN_KEEP}"
+  DISABLE_SIGNUPS: "true"          # first-admin-only; new users via Admin -> User Invitations
+  # DeepSeek via the OpenAI-compatible endpoint. INFERENCE_OUTPUT_SCHEMA=json is LOAD-BEARING —
+  # DeepSeek has no json_schema strict mode, only json_object (memory karakeep_deepseek). Do NOT drop.
+  OPENAI_BASE_URL: "https://api.deepseek.com/v1"
+  INFERENCE_TEXT_MODEL: "deepseek-chat"
+  INFERENCE_OUTPUT_SCHEMA: "json"
+  INFERENCE_ENABLE_AUTO_TAGGING: "true"
+  # SSRF allowlist for the crawler — Docker short name rewritten to the bridge FQDN (AR28).
+  CRAWLER_ALLOWED_INTERNAL_HOSTNAMES: "karakeep-anytype-bridge.karakeep.svc.cluster.local"
+  # --- karakeep-meilisearch ---
+  MEILI_NO_ANALYTICS: "true"
+  MEILI_ENV: "production"
+  # --- karakeep-anytype-bridge ---
+  KARAKEEP_BASE_URL: "http://karakeep-web.karakeep.svc.cluster.local:3000"
+  # Reconciliation 1: anytype migrated to k3s in Story 4.4 (LIVE on cluster), so the bridge targets
+  # the cross-namespace FQDN of anytype-heart (matches anytype-config ANYTYPE_HEART_ADDR). A
+  # cross-ns egress allow (bridge) + ingress allow (anytype-heart) is required — see networkpolicy.yaml.
+  ANYTYPE_BASE_URL: "http://anytype-heart.anytype.svc.cluster.local:31009"
+  ANYTYPE_API_VERSION: "2025-05-20"
+  ANYTYPE_TYPE_KEY: "bookmark"
+  LOG_LEVEL: "INFO"

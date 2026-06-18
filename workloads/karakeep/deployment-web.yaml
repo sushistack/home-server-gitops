@@ -1,0 +1,73 @@
+# Story 4.5 — karakeep-web: bookmark manager + workers (ports docker-compose.yml:234-286).
+# The ONLY public face (Traefik -> :3000). Reaches meili :7700 + chrome :9222 (the two isolated
+# internal components) and is reached by the bridge :3000. SQLite (db.db) on RWO Longhorn ->
+# strategy MUST be Recreate (two pods on one WAL = corruption, AR14) + terminationGracePeriodSeconds
+# 30 (= Compose stop_grace_period: 30s WAL-checkpoint flush). Same shape as the navidrome/ntfy refs.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: karakeep-web
+  labels:
+    app.kubernetes.io/name: karakeep-web
+    app.kubernetes.io/component: web   # per-component (kustomize labels: carry only shared identity)
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 120   # Recreate -> stuck rollout is a full outage; surface Degraded fast for git-revert
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: karakeep-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: karakeep-web
+    spec:
+      terminationGracePeriodSeconds: 30   # SQLite WAL checkpoint flush on shutdown (= Compose stop_grace)
+      containers:
+        - name: karakeep-web
+          # ghcr.io/karakeep-app/karakeep:release is floating in Compose (AR29 forbids :release/:latest)
+          # -> pinned by digest to the EXACT image the live container runs (docker inspect on the live Compose host,
+          # 2026-06-19), so the cutover is a copy-not-upgrade (no surprise DB migration). Upgrade =
+          # re-inspect + bump this digest via PR (GitOps-revertible).
+          image: ghcr.io/karakeep-app/karakeep@sha256:64d6a9bbf2d37b5c808cf06b5d87f1f1c7846fdd3844724145a9741aeb06fd31
+          ports:
+            - containerPort: 3000
+          # envFrom ONLY (no inline env: ${VAR}/valueFrom) — avoids the host-side ${VAR} empty-string
+          # overwrite trap the Compose comments warn about. Non-secret from ConfigMap; secrets from
+          # the SealedSecret (NEXTAUTH_SECRET, MEILI_MASTER_KEY, OPENAI_API_KEY).
+          envFrom:
+            - configMapRef:
+                name: karakeep-config
+            - secretRef:
+                name: karakeep-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi   # memory limit only — no cpu limit (avoids CFS throttling); crawl/index bursts
+          # Ports the Compose healthcheck wget --spider /api/health (AR31). startupProbe holds liveness
+          # back while SQLite opens (+ WAL replay after an unclean stop) and meili reindex kicks off —
+          # without it the default liveness window can kill the pod mid-boot and crash-loop it.
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+          volumeMounts:
+            - name: data
+              mountPath: /data    # db.db (bookmarks) + queue.db + assets/ — DB-class PVC
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: karakeep-data

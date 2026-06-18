@@ -1,0 +1,56 @@
+# Story 4.5 — four ClusterIP Services, one per component. Only karakeep-web is publicly exposed
+# (via the Traefik IngressRoute -> :3000); meili/chrome/bridge are in-cluster only. Each selector
+# targets the per-component app.kubernetes.io/name (the shared kustomize labels: are NOT selectors).
+# In-cluster consumers use the FQDN <svc>.karakeep.svc.cluster.local (AR28).
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: karakeep-web
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: karakeep-web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: karakeep-meilisearch
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: karakeep-meilisearch
+  ports:
+    - name: http
+      port: 7700
+      targetPort: 7700
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: karakeep-chrome
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: karakeep-chrome
+  ports:
+    - name: cdp
+      port: 9222
+      targetPort: 9222
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: karakeep-anytype-bridge
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: karakeep-anytype-bridge
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

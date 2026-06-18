@@ -1,0 +1,17 @@
+# Story 4.5 — per-host production TLS for karakeep-web. cert-manager issues a browser-trusted cert
+# for the single host ${SECRET:DOMAIN_KEEP} from the PRODUCTION DNS-01 ClusterIssuer (letsencrypt-prod,
+# Story 2.4) into the `karakeep-tls` Secret in THIS namespace, served by the websecure IngressRoute.
+# Per-host (the Epic 4 pattern, navidrome/miniflux precedent) — self-contained, no cross-ns secret
+# sharing, no LE duplicate-cert burn on rebuild. Renewal is automatic (cert-manager renewBefore).
+# NOTE: ${SECRET:DOMAIN_KEEP} = keep.<public-zone> (Reconciliation 4 — NOT karakeep.<public-zone>).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: karakeep-tls
+spec:
+  secretName: karakeep-tls
+  dnsNames:
+    - "${SECRET:DOMAIN_KEEP}"
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer

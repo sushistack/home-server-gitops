@@ -1,0 +1,252 @@
+# Story 4.5 — the east-west boundary (AC2 / Reconciliation 3 / AR21). This REPRODUCES the Compose
+# `karakeep-internal` net: only karakeep-web could reach meilisearch (master-key :7700) and the
+# UNAUTHENTICATED Chrome CDP (:9222) — NOT the bridge, NOT the flat network.
+#
+# DESIGN (read Reconciliation 3 — this is the crux):
+#   * NetworkPolicies are ADDITIVE (a union of allows); you cannot NARROW exposure by adding a
+#     policy. The cluster-baseline "blanket same-namespace allow" trap would re-expose chrome/meili
+#     to the in-ns bridge. So there is NO blanket same-ns ingress allow here. Instead, chrome, meili
+#     and the bridge each get a TARGETED ingress policy — and the moment a pod is selected by ANY
+#     ingress policy, all OTHER ingress to it is denied. That is what isolates them from the bridge.
+#   * karakeep-web ingress is intentionally LEFT OPEN (no policy selects web for Ingress) so Traefik
+#     (k3s ships it in kube-system, NOT GitOps-managed here) can reach :3000 without us guessing its
+#     namespace/pod labels — the brittle, upgrade-fragile guess the miniflux policy (4.6) also
+#     refused. web is the public face anyway; the ASSETS that must be isolated are chrome/meili.
+#   * EGRESS is default-denied for every pod (NP-DENY-EGRESS) then re-opened per role. DNS-egress to
+#     kube-dns is the #1 predictable failure under default-deny — every pod that resolves a name
+#     needs it.
+#
+# k3s ENFORCES NetworkPolicy (bundled kube-router). The cluster is allow-all today, so these are the
+# first enforced policies in ns karakeep.
+# // ponytail: chrome/web/backup egress to 0.0.0.0/0 on 80/443 — crawled pages + DeepSeek + R2 live
+# // anywhere on the public internet; add an ipBlock `except` for RFC1918 only if east-west isolation
+# // of OUTBOUND traffic ever becomes a requirement (the inbound isolation is what AC2 is about).
+---
+# NP-DENY-EGRESS — default-deny EGRESS for every pod (forces each role to declare its egress).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+---
+# chrome INGRESS — ONLY from karakeep-web on 9222 (the CDP isolation; bridge & flat net are denied).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chrome-ingress-web-only
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: karakeep-chrome
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: karakeep-web
+      ports:
+        - protocol: TCP
+          port: 9222
+---
+# meili INGRESS — ONLY from karakeep-web on 7700 (master-key index API; bridge & flat net denied).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: meili-ingress-web-only
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: karakeep-meilisearch
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: karakeep-web
+      ports:
+        - protocol: TCP
+          port: 7700
+---
+# bridge INGRESS — ONLY from karakeep-web on 8080 (the "ai tagged" webhook). Not part of the CDP/meili
+# threat model, but cheap defence-in-depth and matches the Compose home-network-only reachability.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bridge-ingress-web-only
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: karakeep-anytype-bridge
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: karakeep-web
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# web EGRESS — DNS + the three internal components + the public internet (DeepSeek inference + any
+# direct fetch). web is the only pod allowed to reach meili/chrome, which (with the ingress policies
+# above) is the whole "only karakeep-web bridges both nets" invariant.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: karakeep-web
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: karakeep-meilisearch
+      ports:
+        - protocol: TCP
+          port: 7700
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: karakeep-chrome
+      ports:
+        - protocol: TCP
+          port: 9222
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: karakeep-anytype-bridge
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+---
+# chrome EGRESS — DNS + the public internet (Chrome itself fetches the bookmarked pages).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chrome-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: karakeep-chrome
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+---
+# bridge EGRESS — DNS + karakeep-web :3000 (fetch bookmark) + anytype-heart :31009 CROSS-NAMESPACE
+# (Reconciliation 1: anytype is on k3s since 4.4). Cross-ns peer = namespaceSelector(anytype) +
+# podSelector(anytype-heart) in ONE `to` entry. anytype has no ingress NetworkPolicy today (allow-all),
+# so no matching ingress is needed there — but if anytype ever gets a default-deny, it must admit this
+# bridge (noted in the runbook depends-on).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bridge-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: karakeep-anytype-bridge
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: karakeep-web
+      ports:
+        - protocol: TCP
+          port: 3000
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: anytype
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: anytype-heart
+      ports:
+        - protocol: TCP
+          port: 31009
+---
+# backup EGRESS — DNS + the public internet (R2 over 443; alpine apk CDN over 80/443 for the runtime
+# sqlite+rclone install). The backup pods reach the SQLite via a MOUNTED PVC, not the network, so NO
+# in-ns egress to the app pods is needed. meilisearch and the meili PVC are never touched.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backup-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: karakeep-backup
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443

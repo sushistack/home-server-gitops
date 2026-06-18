@@ -1,0 +1,54 @@
+# Story 4.5 — durable state on Longhorn. THREE PVCs, hybrid backup semantics (AC1):
+#   karakeep-data        : karakeep-web's /data — db.db (bookmarks + read-state) + queue.db + assets/.
+#                          DB-class: db.db dumped to R2 by backup-cronjob.yaml (online sqlite3 .backup).
+#                          assets/ ride Longhorn replication (regenerable crawl snapshots; not shipped
+#                          every 6h — same call as navidrome's music PVC). RWO -> Recreate (SQLite WAL).
+#   karakeep-bridge-data : the bridge's /data — bridge.sqlite (the Karakeep-ID -> Anytype-object DEDUP
+#                          map). Reconciliation 2: losing it = next sync re-creates DUPLICATE Anytype
+#                          objects. Treated as stateful: migrated + dumped to R2. RWO -> Recreate.
+#   karakeep-meili       : meilisearch index. Reconciliation 5 / AR36: REBUILDABLE derived state.
+#                          FRESH PVC at cutover; karakeep reindexes from db.db on first boot. No dump.
+# All RWO (Longhorn single-node attach); Prune=false + the SC's Retain reclaim so ArgoCD/Longhorn
+# never delete real data on PVC removal (AR15). // ponytail: meili is derived — don't migrate the index.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: karakeep-data
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 5Gi   # db.db ~0.6 MB today + crawled assets; grow via PR if assets climb
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: karakeep-bridge-data
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi   # bridge.sqlite dedup map (~12 KB today); grow via PR
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: karakeep-meili
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false   # Retain anyway; reindex makes loss non-fatal
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi   # rebuilt index; grow via PR
