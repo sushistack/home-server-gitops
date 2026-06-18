@@ -42,11 +42,30 @@ by the [`adr-link-check`](.github/workflows/adr-link-check.yml) CI gate.
 - [ADR-0002 — Excalidraw is the Phase-1 throwaway pilot](docs/adr/ADR-0002-excalidraw-phase1-pilot.md)
 - [ADR-0003 — Longhorn on a single host: replicas guard VM/disk loss, not host loss](docs/adr/ADR-0003-longhorn-single-host-storage.md)
 - [ADR-0004 — Sealed Secrets: the sealing key is a cluster-bound Plane 0 asset](docs/adr/ADR-0004-secrets-sealing-key.md)
+- [ADR-0005 — Traefik + cert-manager DNS-01, cloudflared per-host cutover](docs/adr/ADR-0005-ingress-tls.md)
+- [ADR-0006 — One public-default repo, render-time tokens + a two-layer gate](docs/adr/ADR-0006-exposure-model.md)
+- [ADR-0007 — Self-scaffolded ArgoCD app-of-apps (bounded), not an adopted template](docs/adr/ADR-0007-gitops-tool.md)
 
 One-line decision log: [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 The **3-line rule:** rollback is `git revert` + reconcile — never an out-of-band
 `kubectl rollout undo`; out-of-band drift is reverted by self-heal anyway.
+
+## Architecture diagrams
+
+Logical names only (real addresses live in the git-ignored `internal/`); each has
+committed source + exported SVG.
+
+**Platform (C4 container view)** — the layer boundary, in-cluster planes, and
+external services. Source: [`platform-c4-container.mmd`](docs/diagrams/platform-c4-container.mmd).
+
+![Platform C4: layer boundary, in-cluster planes, external services](docs/diagrams/platform-c4-container.svg)
+
+**GitOps bootstrap & sync-wave flow** — one manual `kubectl apply`, then sync
+waves 0→3 and the steady-state reconcile/`git revert` loop. Source:
+[`platform-gitops-flow.mmd`](docs/diagrams/platform-gitops-flow.mmd).
+
+![GitOps bootstrap and sync-wave flow](docs/diagrams/platform-gitops-flow.svg)
 
 ## What was deliberately excluded
 

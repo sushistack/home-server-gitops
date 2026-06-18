@@ -1,0 +1,36 @@
+%% Platform C4 (container view): layer boundary + in-cluster planes + external services.
+%% Adapted from architecture.md "Layer boundary & platform planes". Logical names ONLY —
+%% no real hostnames, IPs, or domains (AR35 + exposure gate).
+%% Source of truth for docs/diagrams/platform-c4-container.svg (re-render after edits).
+flowchart TB
+    subgraph outside["Outside the cluster (layer-boundary rule)"]
+        router["Household router (internet edge)"]
+        subgraph host["Proxmox host — Plane 0: bare-metal recovery"]
+            note0["single physical host = software HA real, hardware HA NOT"]
+        end
+    end
+
+    subgraph cluster["k3s cluster — 3 server nodes, embedded etcd (quorum 3)"]
+        gitops["GitOps control loop — ArgoCD app-of-apps"]
+        ingress["Ingress &amp; TLS — Traefik + cert-manager (DNS-01)"]
+        storage["Persistent storage — Longhorn (V1)"]
+        secrets["Secrets — Sealed Secrets"]
+        backup["Backup / DR — CronJobs (DB dump / snapshot)"]
+        workloads["Workloads (stateless to stateful, CRITICAL last)"]
+    end
+
+    subgraph external["External services"]
+        cf["Cloudflare + public tunnel (public entry)"]
+        r2["Offsite object store (backups)"]
+        ntfy["Alert sink (Day-2 events)"]
+    end
+
+    host -.hosts the VMs.-> cluster
+    cf --> ingress
+    ingress --> workloads
+    gitops --> workloads
+    storage --> workloads
+    secrets --> workloads
+    backup --> r2
+    workloads -.metrics/events.-> ntfy
+    note0 -.->|"git-revert / app-of-apps rebuild"| gitops

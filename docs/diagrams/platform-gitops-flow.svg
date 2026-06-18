@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 520" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <!-- GitOps bootstrap + sync-wave flow: one manual command, everything after reconciled.
+       Hand-exported from platform-gitops-flow.mmd. Role-based logical names only —
+       no real host/IP/domain (AR35 + exposure gate). -->
+  <style>
+    .box{fill:#f4f6fb;stroke:#5b6b8c;stroke-width:1.5;}
+    .wave{fill:#eef7f0;stroke:#3f7a52;stroke-width:1.5;}
+    .panel{fill:#ffffff;stroke:#9aa7c0;stroke-width:1.5;stroke-dasharray:4 3;}
+    .lbl{fill:#1f2937;}
+    .title{fill:#334155;font-weight:700;font-size:14px;}
+    .edge{stroke:#5b6b8c;stroke-width:1.5;fill:none;}
+    .edgetxt{fill:#475569;font-size:11px;}
+    .dash{stroke:#a16207;stroke-width:1.5;fill:none;stroke-dasharray:5 4;}
+    .dashtxt{fill:#a16207;font-size:11px;}
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#5b6b8c"/>
+    </marker>
+    <marker id="arrowy" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#a16207"/>
+    </marker>
+  </defs>
+
+  <!-- manual bootstrap chain -->
+  <rect class="box" x="20" y="190" width="210" height="72" rx="8"/>
+  <text class="lbl" x="125" y="218" text-anchor="middle">Ansible: provision VMs +</text>
+  <text class="lbl" x="125" y="234" text-anchor="middle">install k3s</text>
+  <text class="edgetxt" x="125" y="251" text-anchor="middle">(ends before ArgoCD root sync)</text>
+
+  <rect class="box" x="260" y="200" width="170" height="52" rx="8"/>
+  <text class="lbl" x="345" y="231" text-anchor="middle">manual: install ArgoCD</text>
+
+  <rect class="box" x="455" y="190" width="185" height="72" rx="8"/>
+  <text class="lbl" x="547" y="220" text-anchor="middle">manual once:</text>
+  <text class="edgetxt" x="547" y="238" text-anchor="middle">kubectl apply</text>
+  <text class="edgetxt" x="547" y="253" text-anchor="middle">root-app.yaml</text>
+
+  <path class="edge" d="M230,226 L260,226" marker-end="url(#arrow)"/>
+  <path class="edge" d="M430,226 L455,226" marker-end="url(#arrow)"/>
+
+  <!-- sync-wave panel -->
+  <rect class="panel" x="665" y="40" width="250" height="320" rx="10"/>
+  <text class="title" x="681" y="64" font-size="12.5px">ArgoCD app-of-apps — sync waves</text>
+
+  <rect class="wave" x="685" y="78" width="210" height="44" rx="8"/>
+  <text class="lbl" x="790" y="105" text-anchor="middle">wave 0: Sealed Secrets + Longhorn</text>
+  <rect class="wave" x="685" y="146" width="210" height="44" rx="8"/>
+  <text class="lbl" x="790" y="173" text-anchor="middle">wave 1: cert-manager CRDs</text>
+  <rect class="wave" x="685" y="214" width="210" height="44" rx="8"/>
+  <text class="lbl" x="790" y="241" text-anchor="middle">wave 2: ClusterIssuer (DNS-01)</text>
+  <rect class="wave" x="685" y="282" width="210" height="44" rx="8"/>
+  <text class="lbl" x="790" y="309" text-anchor="middle">wave 3: workloads + IngressRoute</text>
+
+  <path class="edge" d="M640,210 L685,108" marker-end="url(#arrow)"/>
+  <path class="edge" d="M790,122 L790,146" marker-end="url(#arrow)"/>
+  <path class="edge" d="M790,190 L790,214" marker-end="url(#arrow)"/>
+  <path class="edge" d="M790,258 L790,282" marker-end="url(#arrow)"/>
+
+  <!-- reachable -->
+  <rect class="box" x="945" y="140" width="160" height="64" rx="8"/>
+  <text class="lbl" x="1025" y="168" text-anchor="middle">service reachable</text>
+  <text class="edgetxt" x="1025" y="185" text-anchor="middle">at logical-host with TLS</text>
+  <path class="edge" d="M895,300 L945,200" marker-end="url(#arrow)"/>
+
+  <!-- steady-state reconcile loop (dashed) -->
+  <rect class="box" x="700" y="420" width="320" height="60" rx="8" style="fill:#fdf6e3"/>
+  <text class="lbl" x="860" y="446" text-anchor="middle">ArgoCD reconcile (auto-sync ~2 min)</text>
+  <text class="dashtxt" x="860" y="464" text-anchor="middle">drift &#8594; selfHeal · bad rollout held · git revert = rollback</text>
+
+  <path class="dash" d="M1025,204 L1010,420" marker-end="url(#arrowy)"/>
+  <text class="dashtxt" x="1018" y="320">git commit</text>
+  <path class="dash" d="M860,420 L1010,206" marker-end="url(#arrowy)"/>
+</svg>

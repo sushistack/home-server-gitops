@@ -1,0 +1,24 @@
+%% GitOps bootstrap + sync-wave flow: one manual command, everything after reconciled.
+%% Adapted from architecture.md "Bootstrap & sync-wave flow". Logical names ONLY —
+%% no real hostnames, IPs, or domains (AR35 + exposure gate).
+%% Source of truth for docs/diagrams/platform-gitops-flow.svg (re-render after edits).
+flowchart LR
+    A["Ansible: provision VMs + install k3s<br/>(ends just before ArgoCD root sync)"]
+    B["manual once: install ArgoCD"]
+    C["manual once: kubectl apply root-app.yaml"]
+    A --> B --> C --> D
+
+    subgraph waves["ArgoCD app-of-apps — sync waves"]
+        D["wave 0: Sealed Secrets + Longhorn"]
+        E["wave 1: cert-manager CRDs"]
+        F["wave 2: ClusterIssuer (DNS-01)"]
+        G["wave 3: workloads + IngressRoute"]
+        D --> E --> F --> G
+    end
+
+    G --> H["service reachable at logical-host with TLS"]
+
+    %% steady-state reconcile loop (optional depiction)
+    H -.->|"git commit"| L["ArgoCD reconcile (auto-sync, ~2 min)"]
+    L -.->|"drift -> selfHeal; bad rollout held"| H
+    L -.->|"git revert = rollback"| H

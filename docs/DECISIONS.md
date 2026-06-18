@@ -148,3 +148,20 @@ material, IP, or `*.<zone>` host appears; Plane 0 secrets stay off-repo.
   already scoped `DNS:Edit` on the public zone) rather than minting a dedicated one. Accepted
   blast-radius trade-off for a throwaway; **Story 2.4 issues a dedicated least-privilege token**
   for cert-manager when promoting to production. (NFR11)
+
+## Cross-cutting ADR set completed (Story 3.2)
+
+- **The cross-cutting ADR set is now complete (6 decision-unit ADRs).** Added
+  the three remaining cross-cutting records against the fixed template; the set
+  is `why-compose-to-k3s` ([ADR-0001](adr/ADR-0001-why-compose-to-k3s.md)),
+  `storage` ([ADR-0003](adr/ADR-0003-longhorn-single-host-storage.md)),
+  `secrets` ([ADR-0004](adr/ADR-0004-secrets-sealing-key.md)),
+  `ingress-tls` ([ADR-0005](adr/ADR-0005-ingress-tls.md)),
+  `exposure-model` ([ADR-0006](adr/ADR-0006-exposure-model.md)),
+  `gitops-tool` ([ADR-0007](adr/ADR-0007-gitops-tool.md)). The excalidraw
+  service ADR ([ADR-0002](adr/ADR-0002-excalidraw-phase1-pilot.md)) is separate
+  (decision-unit, not service-unit). No ceremony per-service ADR added. (AR33, FR31)
+- **Platform diagrams added (source + SVG).** `platform-c4-container` (layer
+  boundary + in-cluster planes + external services) and `platform-gitops-flow`
+  (bootstrap → sync waves 0→3 → reconcile loop), adapted from architecture.md's
+  Mermaid. Logical names only; PNG forbidden, orphan SVG forbidden. (AR35)
