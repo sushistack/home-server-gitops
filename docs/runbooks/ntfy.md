@@ -55,7 +55,7 @@ In-cluster / ArgoCD: `kubectl get pods -n ntfy` → pod `Running`/`Ready`;
 ## Backup/restore commands
 
 **DB-class — real backup, NOT N/A.** A `ntfy-backup` CronJob (ns `ntfy`, ≤6h) takes an online
-`sqlite3 .backup` of both DBs and uploads to `r2:homelab-k3s-backup/ntfy/` (replaces the Compose
+`sqlite3 .backup` of both DBs and uploads to `r2:homelab-k3s-services-backup/ntfy/` (replaces the Compose
 offen sidecar). Credential: the per-namespace `ntfy-backup-r2` SealedSecret.
 
 **Run a backup on demand:**
@@ -63,13 +63,13 @@ offen sidecar). Credential: the per-namespace `ntfy-backup-r2` SealedSecret.
 kubectl create job -n ntfy --from=cronjob/ntfy-backup ntfy-backup-manual
 kubectl logs -n ntfy job/ntfy-backup-manual -f
 # verify it landed:
-rclone lsl r2:homelab-k3s-backup/ntfy/ | tail
+rclone lsl r2:homelab-k3s-services-backup/ntfy/ | tail
 ```
 
 **Restore (auth.db is the durable state; cache.db is disposable):**
 ```
 # 1. fetch the chosen archive from R2 and unpack
-rclone copy r2:homelab-k3s-backup/ntfy/ntfy-<ts>.tar.gz /tmp/
+rclone copy r2:homelab-k3s-services-backup/ntfy/ntfy-<ts>.tar.gz /tmp/
 tar -C /tmp -xzf /tmp/ntfy-<ts>.tar.gz          # -> /tmp/auth.db, /tmp/cache.db
 
 # 2. quiesce the pod so nothing holds the SQLite WAL, then copy into the PVC

@@ -1,6 +1,6 @@
 # Story 4.1 — the REUSABLE backup actor (ntfy reference). Replaces the Compose
 # offen/docker-volume-backup sidecar (configs/docker/docker-compose.yml:729-757), which does NOT
-# port to k8s (a sidecar cannot stop a peer pod). Preserved deltas: R2 path homelab-k3s-backup/ntfy/,
+# port to k8s (a sidecar cannot stop a peer pod). Preserved deltas: R2 path homelab-k3s-services-backup/ntfy/,
 # filename prefix ntfy-, ≤6h cadence, ~30-day retention. (AC3; FR19/FR22; AR16/AR17/AR18; NFR5)
 #
 # RWO multi-mount trap (Reconciliation 1): ntfy-data is RWO -> Longhorn attaches to one node.
@@ -52,10 +52,12 @@ spec:
                   sqlite3 /data/auth.db  ".backup /scratch/auth.db"
                   sqlite3 /data/cache.db ".backup /scratch/cache.db"
                   tar -C /scratch -czf "/scratch/ntfy-${ts}.tar.gz" auth.db cache.db
-                  rclone copy "/scratch/ntfy-${ts}.tar.gz" "r2:homelab-k3s-backup/ntfy/"
-                  # ~30-day retention (offen semantics). Prefer an R2 lifecycle rule if you'd rather
-                  # not give the cred delete scope. // ponytail: rclone delete is the lazy port.
-                  rclone delete --min-age 720h "r2:homelab-k3s-backup/ntfy/" || true
+                  rclone copy "/scratch/ntfy-${ts}.tar.gz" "r2:homelab-k3s-services-backup/ntfy/"
+                  # ~30-day retention (offen semantics). Safe here: homelab-k3s-services-backup is a
+                  # DEDICATED k3s-service bucket (not shared with the Compose offen backups), so this
+                  # prefix only holds our own archives. // ponytail: rclone delete is the lazy port;
+                  # swap to an R2 lifecycle rule if you'd rather not grant the cred delete scope.
+                  rclone delete --min-age 720h "r2:homelab-k3s-services-backup/ntfy/" || true
               envFrom:
                 - secretRef:
                     name: ntfy-backup-r2   # per-ns SealedSecret: R2 creds + rclone remote (sealedsecret.yaml)

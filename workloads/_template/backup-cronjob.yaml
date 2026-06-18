@@ -53,8 +53,8 @@
 #                   # <<< DB-CLASS DELTA: replace this dump with the row for your data class (above) >>>
 #                   sqlite3 /data/<db> ".backup /scratch/<db>"
 #                   tar -C /scratch -czf "/scratch/__SERVICE__-${ts}.tar.gz" <files>
-#                   rclone copy "/scratch/__SERVICE__-${ts}.tar.gz" "r2:homelab-k3s-backup/__SERVICE__/"
-#                   rclone delete --min-age 720h "r2:homelab-k3s-backup/__SERVICE__/" || true
+#                   rclone copy "/scratch/__SERVICE__-${ts}.tar.gz" "r2:homelab-k3s-services-backup/__SERVICE__/"
+#                   rclone delete --min-age 720h "r2:homelab-k3s-services-backup/__SERVICE__/" || true
 #               envFrom:
 #                 - secretRef:
 #                     name: __SERVICE__-r2           # per-ns R2 SealedSecret (sealed to name+ns)

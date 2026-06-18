@@ -22,7 +22,7 @@ Story 3.4 Validation Gate with no open "would lose data" finding. (epics.md Epic
    (Deployment, Service, PVC, ConfigMap, IngressRoute, Certificate, backup CronJob).
 3. **PVC bound** — `kubectl get pvc -n <ns> <service>-data` → `Bound`.
 4. **Backup actor has succeeded once** — trigger the CronJob and confirm an archive lands in
-   `r2:homelab-k3s-backup/<service>/` **before** touching any data. This is the in-cutover
+   `r2:homelab-k3s-services-backup/<service>/` **before** touching any data. This is the in-cutover
    fallback: if anything corrupts mid-move, you restore from this archive.
 5. **TTL pre-lowered** — drop the `<host>` cloudflared/DNS TTL to the rollback window
    (e.g. 60s) and wait out the OLD TTL so the low value is actually live before you flip.
@@ -146,7 +146,7 @@ switch to a shared wildcard + reflector only if issuance volume ever bites.`
 - **cache.db is transient:** losing ≤12h of cached push messages is acceptable; the 0-loss
   assertion is **only** about `auth.db` (users/tokens/ACLs). cache.db divergence in-window is benign.
 - **Backup actor:** `workloads/ntfy/backup-cronjob.yaml` (`ntfy-backup`, ≤6h) replaces the Compose
-  `offen/docker-volume-backup` sidecar → `r2:homelab-k3s-backup/ntfy/`.
+  `offen/docker-volume-backup` sidecar → `r2:homelab-k3s-services-backup/ntfy/`.
 - **Rollback:** flip `<host>` cloudflared back to NPM; Compose ntfy still serves its SQLite.
 
 > **Chicken-and-egg:** ntfy is the alert channel for Story 4.2. Until 4.2 lands, there is **no
