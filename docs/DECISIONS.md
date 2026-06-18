@@ -2,6 +2,35 @@
 
 Running log of load-bearing decisions. One line each; link the story.
 
+## Vaultwarden cutover (CRITICAL, LAST) + project DONE audit (Story 4.8)
+
+- 2026-06-19 | **Vaultwarden cut over to k3s — the LAST stateful service.** Same SQLite write-freeze
+  machine as ntfy/navidrome/n8n: `docker compose stop` (single-writer freeze) → online
+  `sqlite3 .backup` + carry **`rsa_key.pem`** (JWT signing — lose it = mass re-auth) + attachments →
+  ingest into the `vaultwarden-data` Longhorn PVC (pre-populated BEFORE the app existed, to dodge the
+  ApplicationSet selfHeal/empty-init race — `automated{selfHeal}` can't be paused on an appset-managed
+  Application) → ArgoCD app generated (commit e5b5a08) → **verify-before-flip: db.sqlite3 sha256
+  byte-identical to source, users 1==1, ciphers 515==515, /alive+web 200, vaultwarden-tls LE-prod
+  Ready** → flip CF tunnel (`vault.eli.kr→10.0.0.101:443` before `*.eli.kr→NPM`, API PUT) + OpenWrt
+  LAN override (10.0.0.20→10.0.0.101, uci). Public (CF edge) + LAN both 200. **Window ≈6 min ≤10,
+  RPO=0.** Backup actor proven (R2 `…/vaultwarden/`) + verified restore in a scratch ns. Compose
+  vaultwarden **PARKED** (restarted, localhost 200) as the rollback net; `vaultwarden-backup` left
+  stopped so it can't stop the parked container. [ADR-0009](adr/ADR-0009-vaultwarden-critical-last.md),
+  [runbook](runbooks/vaultwarden.md), [DONE.md](DONE.md)
+- 2026-06-19 | **Project DoD audited ([DONE.md](DONE.md)).** All 9 application services + platform on
+  ArgoCD Synced/Healthy (only the `argocd` self-app is intentionally OutOfSync), Gate 0 + per-service
+  verified restores, ADRs linked (CI green), exposure gate green, NFR15a verified. **One open DoD line:
+  the self-heal demo clip (clip 2) is recording-pending (operator-deferred, Story 3.3).** DONE is
+  declared **subject to the operator accepting that deferral** (AC4: optional polish must not block
+  DONE). **Epic 5 / Phase 3 is optional, post-DONE; Compose is PARKED not retired (retire = Story 5.4)
+  — the dual-run rollback net stays until then.**
+- 2026-06-19 | ⚠️ **Found (operator follow-up): `argocd-render-tokens` Secret has a pre-existing
+  newline-corruption** — `CLOUDFLARE_DNS01_TOKEN`'s value runs into `DOMAIN_NTFY=notify.eli.kr` with no
+  separator (a clean `DOMAIN_NTFY` line also exists below it). Harmless to rendering (cert-manager uses
+  its own `cloudflare-dns01-token` Secret in ns cert-manager) but it pollutes that token value. Left
+  untouched during the vault cutover (didn't want to risk the DNS token); operator should re-split the
+  line. `DOMAIN_VAULTWARDEN=vault.eli.kr` was appended cleanly below it.
+
 ## Anytype cutover — non-HTTP TCP/UDP edge + file-class BadgerDB quiesce (Story 4.4)
 
 - 2026-06-18 | anytype migrated to k3s as **one logical service / two components / one namespace**
