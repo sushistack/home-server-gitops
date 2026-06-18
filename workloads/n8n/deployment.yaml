@@ -9,8 +9,11 @@ metadata:
 spec:
   replicas: 1
   # Recreate -> old pod dies before the new one starts, so a stuck rollout is a full outage with no
-  # healthy fallback. 120s (vs the 600s default) surfaces ArgoCD Degraded fast for a quick git revert.
-  progressDeadlineSeconds: 120
+  # healthy fallback. 180s (vs the 600s default) surfaces ArgoCD Degraded fast for a quick git revert,
+  # while still clearing the startupProbe's 150s (30*5s) WAL-replay budget below — else a legit slow
+  # boot (the unclean-stop replay the startupProbe exists to tolerate) trips Degraded before the probe
+  # gives up, firing the git-revert reflex on a pod that would have come up healthy at ~150s.
+  progressDeadlineSeconds: 180
   strategy:
     type: Recreate
   # Hand-written selector (kept out of kustomize labels) so it stays immutable across re-applies.
