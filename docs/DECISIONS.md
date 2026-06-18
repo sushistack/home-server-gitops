@@ -33,10 +33,15 @@ Running log of load-bearing decisions. One line each; link the story.
   podAffinity** — the RWO multi-mount trap is SQLite/file-specific. App+DB are one Application in the
   `miniflux` ns; `DATABASE_URL` (FQDN host + password) lives in the SealedSecret; app egress 80/443 is
   opened for feed fetch (default-deny otherwise stops refresh). Client/server pinned `postgres:18`
-  (AR29). **Manifests + runbook + backup actor authored & validated; the live flip of `${SECRET:DOMAIN_RSS}`
-  (NPM→Traefik) + sealing real `DATABASE_URL`/R2 creds + the AC1 verified-restore are operator-run**
-  (≤10min window). Compose miniflux + miniflux-db **PARKED not decommissioned** (rollback = flip the
-  tunnel route back; Epic 5 Story 5.4 does the functional decommission). | [ADR-0008](adr/ADR-0008-miniflux-postgres-logical-dump.md)
+  (AR29). **DEPLOYED LIVE to k3s as a parallel run (2026-06-18):** manifests merged (PR #6) → ArgoCD
+  `miniflux` Synced/Healthy; SealedSecrets sealed against the live key; `DOMAIN_RSS` render token
+  registered; **0-loss verified** (live `pg_dump`→k3s `pg_restore`: feeds 9==9, users 1==1,
+  entries==dump); **backup actor proven** (`pg_dump`→`r2:homelab-k3s-services-backup/miniflux/`,
+  through the default-deny NetworkPolicy); all 3 nodes serve `${SECRET:DOMAIN_RSS}` at :443 with the
+  prod cert (HTTP 200). **The ONLY remaining step is the public flip** — re-point the
+  `${SECRET:DOMAIN_RSS}` cloudflared tunnel ingress NPM→`https://<node>:443` (dashboard-managed
+  tunnel, needs CF Tunnel:Edit — operator). Compose stays live + **PARKED not decommissioned**
+  (rollback intact; Epic 5 Story 5.4 decommissions). | [ADR-0008](adr/ADR-0008-miniflux-postgres-logical-dump.md)
 
 ## ytdlp-api migration (Story 3.1)
 

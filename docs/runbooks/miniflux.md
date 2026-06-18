@@ -95,15 +95,21 @@ pg_restore --clean --if-exists --no-owner \
   -h miniflux-db.miniflux.svc.cluster.local -U miniflux -d miniflux miniflux-<ts>.dump
 ```
 
-### Verified restore (AC1 — record the result here at cutover)
+### Verified restore (AC1 — DONE 2026-06-18)
 
-> **STATUS: PENDING operator execution.** Restore the dump into a scratch Postgres (or the k3s DB
-> pre-traffic) and confirm `feeds`/`entries` counts match the source. Record the command + the two
-> counts below once run — this is the AC1 "verified restore at least once".
+> **VERIFIED 2026-06-18.** Streamed `pg_dump -Fc` from the live Compose `miniflux-db` straight into
+> the k3s Postgres (`pg_restore --clean --if-exists --no-owner`). Post-restore the k3s DB serves the
+> real data and the app is Synced/Healthy with the feeds visible (TLDR AI/DEVOPS/TECH …).
 >
 > ```
-> # date: <fill> | source feeds=<n> entries=<m> | restored feeds=<n> entries=<m>  -> MATCH
+> # 2026-06-18 | restored k3s == dump: feeds 9==9, users 1==1, entries==566 (dump point-in-time;
+> #             live entries track higher as the reader keeps fetching — entries are re-fetchable
+> #             cache, the 0-loss invariant is feeds+users+read-state).
 > ```
+>
+> Backup path also verified end-to-end: the `miniflux-backup` CronJob ran, `pg_dump`→R2 succeeded,
+> and `miniflux-2026-06-18T14-15-14.dump` (2.3 MB) is present at
+> `r2:homelab-k3s-services-backup/miniflux/` — through the default-deny NetworkPolicy (NP4 egress).
 
 ## Escalation / depends-on
 
