@@ -25,14 +25,23 @@
 #   schedule: "40 */6 * * *"          # ≤6h steady-state (NFR5); pick a slot
 #   timeZone: Asia/Seoul
 #   concurrencyPolicy: Forbid
+#   # Bound the run: a hung pod + Forbid would silently suppress every later backup with no Failed
+#   # job recorded. activeDeadlineSeconds kills it (-> Failed, visible); startingDeadlineSeconds caps
+#   # how late a missed schedule may start. Re-tier the ceiling for slower dumps (large pg_dump).
+#   startingDeadlineSeconds: 300
 #   successfulJobsHistoryLimit: 3
 #   failedJobsHistoryLimit: 3
 #   jobTemplate:
 #     spec:
+#       activeDeadlineSeconds: 900
 #       template:
 #         metadata:
+#           # NEVER reuse the app's `app.kubernetes.io/name: __SERVICE__` label here — that is the
+#           # Service selector and this pod has no listener, so it would join the Service as a dead
+#           # endpoint each run. podAffinity below targets the APP pod; this pod needs no such label.
 #           labels:
-#             app.kubernetes.io/name: __SERVICE__     # podAffinity target
+#             app.kubernetes.io/name: __SERVICE__-backup
+#             app.kubernetes.io/component: backup
 #         spec:
 #           restartPolicy: OnFailure
 #           affinity:
@@ -40,7 +49,7 @@
 #               requiredDuringSchedulingIgnoredDuringExecution:
 #                 - labelSelector:
 #                     matchLabels:
-#                       app.kubernetes.io/name: __SERVICE__
+#                       app.kubernetes.io/name: __SERVICE__      # the APP pod (not this one)
 #                   topologyKey: kubernetes.io/hostname
 #           containers:
 #             - name: backup

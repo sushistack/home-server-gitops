@@ -17,14 +17,24 @@ spec:
   schedule: "40 */6 * * *"        # ≤6h (the freed offen slot); NFR5 steady-state cadence
   timeZone: Asia/Seoul
   concurrencyPolicy: Forbid
+  # A hung pod (e.g. apk/rclone blocked on egress) would otherwise run forever and, with
+  # Forbid, silently suppress EVERY later backup with no Failed job recorded. Bound both: the
+  # job is killed after activeDeadlineSeconds (-> Failed, visible), and a missed schedule is only
+  # honored within startingDeadlineSeconds.
+  startingDeadlineSeconds: 300
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      activeDeadlineSeconds: 900       # ~15 min ceiling: apk + sqlite .backup + rclone copy
       template:
         metadata:
+          # NOT `app.kubernetes.io/name: ntfy` — that is the Service selector, and this pod has no
+          # listener, so sharing it would add a dead endpoint to the ntfy Service every backup run.
+          # podAffinity below targets the APP pod's label; the backup pod needs no matching label.
           labels:
-            app.kubernetes.io/name: ntfy   # so podAffinity can target the same node as the app pod
+            app.kubernetes.io/name: ntfy-backup
+            app.kubernetes.io/component: backup
         spec:
           restartPolicy: OnFailure
           affinity:
