@@ -1,0 +1,19 @@
+# Story 4.4 — any-sync-bundle ClusterIP. Public reach is via IngressRouteTCP/UDP (NOT a host port),
+# which target THIS Service. TCP 33010 + UDP 33020 on one Service (k8s allows mixed protocols).
+apiVersion: v1
+kind: Service
+metadata:
+  name: anytype
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: anytype
+  ports:
+    - name: sync-tcp
+      port: 33010
+      targetPort: 33010
+      protocol: TCP
+    - name: sync-udp
+      port: 33020
+      targetPort: 33020
+      protocol: UDP

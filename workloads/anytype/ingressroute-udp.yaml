@@ -1,0 +1,15 @@
+# Story 4.4 — public QUIC/UDP 33020 route. Binds the `anytype-udp` static entryPoint to the anytype
+# Service. IngressRouteUDP has NO host/SNI routing (UDP) — the entryPoint maps directly to the
+# service. If QUIC/UDP is blocked at the public edge, sync still works over TCP 33010 but is slower;
+# the runbook lists this as a common failure.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteUDP
+metadata:
+  name: anytype
+spec:
+  entryPoints:
+    - anytype-udp
+  routes:
+    - services:
+        - name: anytype
+          port: 33020

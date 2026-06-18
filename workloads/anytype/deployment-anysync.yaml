@@ -1,0 +1,82 @@
+# Story 4.4 — any-sync-bundle (ports configs/docker/docker-compose.yml:119-139).
+#
+# 🔴 IDENTITY IS THE DATA (Reconciliation 3): the node's peerId/networkId + signing keys live in
+# /data (BadgerDB + key files), and EVERY client hardcodes them (anytype-client-config.yml). This
+# Deployment must start against a PVC populated by COPYING the live /data — a fresh init would mint
+# a NEW peerId and silently orphan every client. So ANY_SYNC_BUNDLE_INIT_* (in anytype-config) is
+# only consulted on a first-time init; with /data copied it is never used. Verify peerId/networkId
+# unchanged before flipping the edge. // ponytail: copy /data, never re-init.
+#
+# BadgerDB on RWO: strategy MUST be Recreate (two pods on one KV dir = corruption — same hazard
+# class as the SQLite-WAL rule) and terminationGracePeriodSeconds 30 lets BadgerDB flush/close
+# cleanly on shutdown. raw TCP/QUIC → NO HTTP probe (every HTTP path 404s); port-listen only.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: anytype
+  labels:
+    app.kubernetes.io/name: anytype
+    app.kubernetes.io/component: anysync   # per-component (kustomize labels: carry only the shared identity)
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 120   # surface a stuck rollout as Degraded fast (operator git-revert) — 4.1 precedent
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: anytype
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: anytype
+    spec:
+      terminationGracePeriodSeconds: 30   # BadgerDB clean close (= Compose stop_grace; sidecar stop-during-backup)
+      containers:
+        - name: anytype
+          # ghcr.io/grishy/any-sync-bundle — PUBLIC (no imagePullSecret). :latest in Compose → pinned
+          # by digest (AR29). Multi-arch index digest resolved 2026-06-18 via
+          #   docker buildx imagetools inspect ghcr.io/grishy/any-sync-bundle:latest
+          # ⚠️ CUTOVER: this is the registry-`latest` digest, which may be NEWER than the digest the
+          # LIVE Compose container actually runs. This is a COPY-not-upgrade migration — before the
+          # flip, confirm it matches the live image, else pin the live one:
+          #   docker inspect --format '{{.Image}}' anytype
+          image: ghcr.io/grishy/any-sync-bundle@sha256:f25e0a648c78a3b36fa44dc8c0deda8c4b35c8b3f50799f04b31ba4531e732d5
+          ports:
+            - name: sync-tcp
+              containerPort: 33010
+              protocol: TCP
+            - name: sync-udp
+              containerPort: 33020
+              protocol: UDP
+          envFrom:
+            - configMapRef:
+                name: anytype-config      # non-secret env (TZ, INIT addrs) — see configmap.yaml
+            - secretRef:
+                name: anytype-secrets     # SealedSecret only; never inline env/valueFrom
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi   # memory limit only — NO cpu limit (avoids CFS throttling)
+          # TCP-listen probe ONLY. UDP 33020 (QUIC) is NOT probeable by k8s — there is no udpSocket
+          # probe; readiness on the TCP listener is the proxy for "bundle is up". (AR31 / Compose
+          # healthcheck disabled). startupProbe holds liveness back while BadgerDB opens/replays.
+          startupProbe:
+            tcpSocket:
+              port: 33010
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: 33010
+          livenessProbe:
+            tcpSocket:
+              port: 33010
+          volumeMounts:
+            - name: data
+              mountPath: /data    # BadgerDB/leveldb KV store + node identity (the Longhorn PVC)
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: anytype-data

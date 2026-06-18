@@ -1,0 +1,70 @@
+# Story 4.4 — anytype-heart: gRPC middleware + JSON REST :31009 (ports docker-compose.yml:146-169).
+# INTERNAL-ONLY (Compose bound 127.0.0.1:31009) → ClusterIP Service, NO IngressRoute. Consumers are
+# cross-namespace (karakeep-anytype-bridge 4.5, n8n 4.7, both still on Compose this story) and reach
+# it by FQDN anytype-heart.anytype.svc.cluster.local:31009 (sourced from anytype-config).
+#
+# Custom PRIVATE image (ghcr.io/sushistack/*) → needs imagePullSecret. Account cache is a file/KV
+# store on RWO → Recreate + grace 30s, same as the bundle. Port-listen probe (Compose uses
+# `nc -z localhost 31009`; HTTP paths 404).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: anytype-heart
+  labels:
+    app.kubernetes.io/name: anytype-heart
+    app.kubernetes.io/component: heart   # per-component (kustomize labels: carry only the shared identity)
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 120
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: anytype-heart
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: anytype-heart
+    spec:
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+        - name: ghcr-sushistack    # pull cred for ghcr.io/sushistack/* (see kustomization note)
+      containers:
+        - name: anytype-heart
+          # PRIVATE custom build, rebuilt by home.server CD; the gitops repo only CONSUMES a pinned
+          # digest (AR29 — never :latest). Cannot be resolved from this repo (registry needs auth).
+          # ⚠️ PIN AT CUTOVER from the live container (the copy-not-upgrade rule applies to heart too):
+          #   docker inspect --format '{{.Image}}' anytype-heart
+          image: ghcr.io/sushistack/home.server/anytype-heart@sha256:REPLACE_AT_CUTOVER
+          ports:
+            - name: rest
+              containerPort: 31009
+          envFrom:
+            - configMapRef:
+                name: anytype-config
+            - secretRef:
+                name: anytype-secrets   # ANYTYPE_MNEMONIC + ACCOUNT_ID drive heart's WalletRecover
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          startupProbe:
+            tcpSocket:
+              port: 31009
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: 31009
+          livenessProbe:
+            tcpSocket:
+              port: 31009
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: anytype-heart-data

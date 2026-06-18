@@ -1,0 +1,49 @@
+# Story 4.4 — HAND-WRITTEN Application for anytype (the documented per-directory EXCEPTION).
+#
+# WHY hand-written and not via the `workloads` ApplicationSet: anytype is the one service whose
+# ingress is NOT HTTP — it needs IngressRouteTCP(33010) + IngressRouteUDP(33020) bound to dedicated
+# Traefik entryPoints. The uniform ApplicationSet template can't express that, and the architecture
+# names anytype as the explicit exception (architecture.md lines 593-604, 770). So:
+#   1) this Application is committed under argocd/apps/ (the app-of-apps root recurses argocd/ and
+#      adopts it — same place as longhorn/cert-manager/etc.), and
+#   2) workloads/anytype is EXCLUDED from the workloads ApplicationSet (argocd/applicationsets/
+#      workloads.yaml) so the two don't both create an Application named `anytype`.
+# (The story's file list put application.yaml inside workloads/anytype/, but the golden-path template
+# and the repo convention are explicit: hand-written Applications live under argocd/ — a file there
+# would be dead, as nothing applies workloads/anytype/*.yaml as Applications.)
+#
+# sync-wave 3 = same as workloads (after sealed-secrets/Longhorn wave 0, cert-manager 1, issuer 2).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: anytype
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: homelab
+  source:
+    repoURL: https://github.com/sushistack/home-server-gitops.git
+    targetRevision: HEAD
+    path: workloads/anytype
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: anytype
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+  # The file-class backup CronJobs (workloads/anytype/backup-cronjob.yaml) QUIESCE by
+  # `kubectl scale deploy/<x> --replicas=0` → tar → scale back to 1. Git pins replicas:1, so without
+  # this ArgoCD selfHeal would race the CronJob and scale the app back to 1 MID-BACKUP — reopening
+  # BadgerDB while the tar runs = the torn KV store the scale-to-0 exists to prevent. Ignoring
+  # /spec/replicas hands replica count to the CronJob (the trap restores it; see backup-cronjob.yaml).
+  # anytype is the only scale-to-0 service (navidrome/ntfy use online dumps), so this guard is new.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas

@@ -1,0 +1,32 @@
+# Story 4.4 — least-privilege RBAC for the scale-to-0 backup actors. Namespaced Role (NOT
+# ClusterRole — no cross-ns reach): patch/get the Deployments' scale subresource (quiesce = scale to
+# 0, then back to 1) and watch pods (to wait for the writer to fully stop before the tar). Bound to
+# the anytype-backup SA. This is the file-class-only grant the architecture calls out (AR: file-class
+# services that scale-to-0 get a Role for deployments/scale; SQLite services don't).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: anytype-backup
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]            # `kubectl scale` reads the deployment before patching its scale
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]   # `kubectl wait --for=delete pod` needs list+watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: anytype-backup
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: anytype-backup
+subjects:
+  - kind: ServiceAccount
+    name: anytype-backup
+    namespace: anytype

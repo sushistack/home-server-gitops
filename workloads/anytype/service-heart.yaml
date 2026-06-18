@@ -1,0 +1,14 @@
+# Story 4.4 — anytype-heart ClusterIP (internal-only; NO IngressRoute). Cross-ns consumers use the
+# FQDN anytype-heart.anytype.svc.cluster.local:31009 (anytype-config ANYTYPE_HEART_ADDR).
+apiVersion: v1
+kind: Service
+metadata:
+  name: anytype-heart
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: anytype-heart
+  ports:
+    - name: rest
+      port: 31009
+      targetPort: 31009
