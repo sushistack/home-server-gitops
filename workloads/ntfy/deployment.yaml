@@ -8,6 +8,10 @@ metadata:
   name: ntfy
 spec:
   replicas: 1
+  # Recreate tears the OLD pod down before the new one starts, so a stuck rollout is a FULL outage
+  # (no healthy pod to fall back to, unlike a maxUnavailable:0 RollingUpdate). 120s (vs the 600s
+  # default) makes ArgoCD surface the Application as Degraded fast so the operator can `git revert`.
+  progressDeadlineSeconds: 120
   strategy:
     type: Recreate
   # Hand-written selector (kept out of kustomize labels) so it stays immutable across re-applies.
@@ -42,6 +46,16 @@ spec:
             limits:
               memory: 256Mi   # memory limit only — NO cpu limit (avoids CFS throttling). ntfy is tiny.
           # Ports the Compose healthcheck `wget --spider http://localhost/v1/health` (AR31).
+          # startupProbe holds liveness back until /v1/health first answers (up to 30*5s = 150s).
+          # ntfy opens SQLite (auth.db + cache.db) on boot; after an unclean stop that includes a
+          # WAL replay. Without this guard the default liveness window (~30s) can kill the pod
+          # mid-boot and crash-loop it — the exact DB-class trap the golden-path template warns of.
+          startupProbe:
+            httpGet:
+              path: /v1/health
+              port: 80
+            failureThreshold: 30
+            periodSeconds: 5
           readinessProbe:
             httpGet:
               path: /v1/health
