@@ -1,0 +1,52 @@
+# Story 4.3 — public route for navidrome: web -> websecure, TLS from the navidrome-tls Secret
+# (certificate.yaml); plain HTTP 301-redirects to HTTPS. Same worked shape as ntfy/draw.
+# Host is tokenized (${SECRET:DOMAIN_NAVIDROME}); the render CMP substitutes at ArgoCD sync time.
+# traefik.io/v1alpha1 (v3) — the old traefik.containo.us API silently fails.
+#
+# CUTOVER (live, no file): the cloudflared tunnel origin for music.<zone> currently points at NPM
+# (Compose). The cutover SWITCH is re-pointing that cloudflared route NPM -> Traefik
+# (https://<node>:443, originServerName=${SECRET:DOMAIN_NAVIDROME}); flipping it back to NPM is the
+# rollback (Compose stays live the whole time). See docs/runbooks/stateful-cutover.md Step 6.
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: navidrome-redirect-https
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+# HTTPS (websecure :443) — serves navidrome with the cert-manager cert.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: navidrome
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`${SECRET:DOMAIN_NAVIDROME}`)
+      kind: Rule
+      services:
+        - name: navidrome
+          port: 4533
+  tls:
+    secretName: navidrome-tls
+---
+# HTTP (web :80) — 301 to HTTPS via the redirect middleware.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: navidrome-redirect
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`${SECRET:DOMAIN_NAVIDROME}`)
+      kind: Rule
+      middlewares:
+        - name: navidrome-redirect-https
+      services:
+        - name: navidrome   # required by the IngressRoute schema; middleware redirects before it's hit
+          port: 4533

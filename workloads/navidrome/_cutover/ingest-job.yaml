@@ -1,0 +1,52 @@
+# Story 4.3 — ONE-SHOT ingest Job (stateful-cutover.md Step 3). THROWAWAY scaffolding:
+# NOT listed in workloads/navidrome/kustomization.yaml, so the ApplicationSet/ArgoCD never manages it
+# (// ponytail: let ArgoCD own this and it fights you on the next sync). Apply by hand during the
+# cutover, then delete.
+#
+# It parks a pod holding BOTH navidrome PVCs open so the operator can copy the consistent SQLite
+# dump (Step 2) into /data and rsync the music library into /music, then exits:
+#
+#   kubectl apply -f workloads/navidrome/_cutover/ingest-job.yaml
+#   pod=$(kubectl -n navidrome get pod -l job-name=navidrome-ingest -o name | head -1)
+#   # 1. DB-class: the consistent sqlite3 .backup copy taken from live Compose (Step 2)
+#   kubectl -n navidrome cp ./navidrome-cut.db "${pod#pod/}:/data/navidrome.db"
+#   # 2. file-class: the music library (long pole — ~2.3 GB; rsync over `kubectl exec` or cp the tree)
+#   #    e.g. tar from the host and untar into the pod:
+#   #    ssh root@10.0.0.20 'tar -C /opt/docker/data/navidrome/music -cf - .' \
+#   #      | kubectl -n navidrome exec -i "${pod#pod/}" -- tar -C /music -xf -
+#   kubectl -n navidrome exec "${pod#pod/}" -- sh -c \
+#     'ls -l /data && sqlite3 /data/navidrome.db "select count(*) from media_file;" && du -sh /music'
+#   kubectl -n navidrome delete -f workloads/navidrome/_cutover/ingest-job.yaml
+#
+# Then the steady-state navidrome Deployment starts against the populated PVCs (Step 4). RWO: this Job
+# and the app pod must not hold the volumes at the same time on different nodes — run ingest BEFORE
+# the Deployment exists, or scale the Deployment to 0 during ingest.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: navidrome-ingest
+  namespace: navidrome
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: ingest
+          image: alpine:3.20   # needs a shell + sqlite3/tar for cp + verify; pin by digest if desired
+          command:
+            - /bin/sh
+            - -c
+            - "apk add --no-cache sqlite >/dev/null; echo 'ready for kubectl cp into /data + /music; sleeping'; sleep 3600"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: music
+              mountPath: /music
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: navidrome-data
+        - name: music
+          persistentVolumeClaim:
+            claimName: navidrome-music

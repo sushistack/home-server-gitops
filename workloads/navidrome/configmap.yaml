@@ -1,0 +1,16 @@
+# Story 4.3 — non-secret navidrome config (ports the Compose `environment:` block,
+# configs/docker/docker-compose.yml:380-386). Consumed via `envFrom: configMapRef` in the
+# Deployment. Secrets (ND_LASTFM_APIKEY/SECRET) are NOT here — they come from the
+# navidrome-lastfm SealedSecret via a SEPARATE envFrom: secretRef (sealedsecret-lastfm.yaml).
+# All navidrome config keys are ND_* (https://www.navidrome.org/docs/usage/configuration/options/).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: navidrome-config
+data:
+  TZ: Asia/Seoul
+  ND_MUSIC_FOLDER: /music
+  ND_DATA_FOLDER: /data
+  ND_AUTOIMPORTSCANINTERVAL: "900"   # 15-min rescan for newly-discovered tracks
+  ND_LOGLEVEL: info
+  ND_LASTFM_ENABLED: "true"          # APIKEY/SECRET arrive via the SealedSecret

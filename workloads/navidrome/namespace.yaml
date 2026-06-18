@@ -1,0 +1,7 @@
+# Story 4.3 — navidrome cutover. Music server: SQLite metadata (DB-class, dumped to R2) +
+# a regenerable music library (file-class, Longhorn snapshot only — never dumped). One
+# service = one namespace = one ArgoCD Application (the workloads ApplicationSet picks this up).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: navidrome

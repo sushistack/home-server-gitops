@@ -1,0 +1,82 @@
+# Story 4.3 — navidrome on k3s (ports configs/docker/docker-compose.yml:370-405).
+# SQLite on an RWO volume: strategy MUST be Recreate (never RollingUpdate — two pods sharing one
+# WAL is the named anti-pattern, AC6/AR14) and terminationGracePeriodSeconds 30 ports the Compose
+# stop_grace_period: 30s WAL-checkpoint flush. Same shape as the ntfy reference (Story 4.1).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: navidrome
+spec:
+  replicas: 1
+  # Recreate -> old pod dies before the new one starts, so a stuck rollout is a full outage with no
+  # healthy fallback. 120s (vs the 600s default) surfaces ArgoCD Degraded fast for a quick git revert.
+  progressDeadlineSeconds: 120
+  strategy:
+    type: Recreate
+  # Hand-written selector (kept out of kustomize labels) so it stays immutable across re-applies.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: navidrome
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: navidrome
+    spec:
+      terminationGracePeriodSeconds: 30   # WAL checkpoint flush on shutdown (= Compose stop_grace_period)
+      containers:
+        - name: navidrome
+          # deluan/navidrome is :latest in Compose (AR29 forbids :latest) -> pinned by digest.
+          # Multi-arch index digest captured 2026-06-18 from the live Compose image via
+          #   docker buildx imagetools inspect deluan/navidrome:latest
+          # (pinned to the EXACT version running on Compose so the cutover does not trigger a
+          # surprise DB schema migration). Upgrade = re-inspect, bump this digest via PR (revertible).
+          # This digest IS the version SSOT for navidrome (workload images live in their manifest,
+          # not versions.yaml — that file tracks platform components only; matches the ntfy precedent).
+          image: deluan/navidrome@sha256:c4b5cb36a790b3eb63ca6a68bbe2fe149c2d7fa2e586f7a480e61db630e6664b
+          ports:
+            - containerPort: 4533   # navidrome's internal port (Compose host-mapped 1970 -> 4533)
+          # Non-secret config from the ConfigMap; Last.fm secret from the SealedSecret.
+          # envFrom (NOT per-key valueFrom) avoids the empty-string overwrite trap the Compose
+          # comments warn about (host-side ${VAR} interpolation). (AC: Dev Notes secret-injection trap)
+          envFrom:
+            - configMapRef:
+                name: navidrome-config
+            - secretRef:
+                name: navidrome-lastfm
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi   # memory limit only — no cpu limit (avoids CFS throttling). Scans are bursty.
+          # Ports the Compose healthcheck `wget --spider http://localhost:4533/rest/ping` (AR31) to an
+          # httpGet probe. startupProbe holds liveness back until /rest/ping first answers (up to
+          # 30*5s = 150s): navidrome opens SQLite (+ WAL replay after an unclean stop) and may scan on
+          # boot; without this guard the default liveness window can kill the pod mid-boot and crash-loop
+          # it — the DB-class trap the golden path warns of.
+          startupProbe:
+            httpGet:
+              path: /rest/ping
+              port: 4533
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /rest/ping
+              port: 4533
+          livenessProbe:
+            httpGet:
+              path: /rest/ping
+              port: 4533
+          volumeMounts:
+            - name: data
+              mountPath: /data    # SQLite metadata (navidrome.db + WAL + cache) — DB-class PVC
+            - name: music
+              mountPath: /music   # regenerable library — file-class PVC
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: navidrome-data
+        - name: music
+          persistentVolumeClaim:
+            claimName: navidrome-music
