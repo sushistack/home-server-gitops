@@ -520,12 +520,18 @@ material, IP, or `*.<zone>` host appears; Plane 0 secrets stay off-repo.
   and stays running; `docker compose -f docker-compose.infra.yml up -d` leaves NPM/cloudflared
   unchanged (only uptime-kuma recreates, to drop its orphan `HOMEPAGE_ALLOWED_HOSTS` env). Nothing
   under OpenWrt / Oracle / Proxmox was touched. (AC3)
-- **Operator out-of-band (not git):** add homepage's surviving links to Karakeep (drop the dying
-  `portainer.eli.kr` link); `docker rm -f portainer homepage` on `10.0.0.20` after the file change
-  lands (CD `up -d` won't remove orphans); delete the `portainer.eli.kr` + homepage proxy-host
-  entries in the NPM admin UI (NPM config is runtime data, not in git); remove the now-orphan
-  `ENV_HOMEPAGE_ALLOWED_HOSTS` GitHub repo secret. **Also prune the two LAN DNS overrides
-  `home.eli.kr` and `portainer.eli.kr` (→ `10.0.0.20`) from OpenWrt
-  (`configs/openwrt/roles/openwrt-base/defaults/main.yml`)** — once the containers are gone these
-  names resolve to a dead backend (NPM 404/502). Left for the operator's next OpenWrt apply because
-  OpenWrt is Plane 0 (out of this story's scope; edits are STAGED across the parallel 5-x stories).
+- **Cleanup status (updated 2026-06-19 code review):**
+  - `docker rm -f portainer homepage` on `10.0.0.20` — **done** (LIVE 2026-06-19; host now runs only
+    cloudflared/NPM/uptime-kuma).
+  - `ENV_HOMEPAGE_ALLOWED_HOSTS` GitHub repo secret — **deleted**.
+  - **OpenWrt LAN DNS overrides `home.eli.kr` + `portainer.eli.kr` (→ `10.0.0.20`) — done.** Both
+    pointed at the now-dead containers. Removed from `local_dns_overrides`
+    (`configs/openwrt/roles/openwrt-base/defaults/main.yml`) and applied **surgically** on the live
+    gateway (`uci del_list` + `dnsmasq reload`), **not** a full `playbook-apply` — the repo SSOT had
+    drifted from live (5.6's comics/comics-admin/books staged ahead at `.101`; vault/n8n repo-stale
+    at `.20`), so a blanket apply would have reverted live cutovers / prematurely flipped un-migrated
+    hosts. The vault/n8n repo staleness was fixed to `.101` in the same pass (live was already `.101`).
+  - Karakeep link migration — **cancelled** (operator decision 2026-06-19; the 12 links are preserved
+    in git history at `97caeec~1:configs/docker/data/homepage/{bookmarks,services}.yaml`, no data loss).
+  - NPM `portainer.eli.kr` + homepage proxy-host entries — **left as-is / moot**: NPM itself is slated
+    for retirement, so cleaning these inert entries (backends already down) isn't worth a separate pass.
