@@ -40,37 +40,36 @@ a fault — don't chase it.
 
 ### 1a. Seal the three secrets (controller ns `sealed-secrets`)
 
-> 🔴 `SEMAPHORE_ACCESS_KEY_ENCRYPTION` MUST be generated **once** and preserved forever. It encrypts
-> the access keys stored in BoltDB — re-running the `head -c32 /dev/urandom` below on a later RESEAL
-> orphans every stored key. On any future reseal, reuse the SAME value, don't regenerate it.
+**No NEW keys are created** — the two SSH keys and the age key already exist and already work; we only
+seal copies for the in-cluster runner:
+- **OpenWrt** `root@10.0.0.1` (HIGH blast radius): the workstation key that already opens it. Confirm
+  which one with `ssh -v root@10.0.0.1 'echo ok' 2>&1 | grep 'Offering\|Server accepts'` — typically
+  `~/.ssh/id_ed25519`.
+- **Oracle** `ubuntu@217.142.236.162`: `~/.ssh/oracle_proxy`.
+- **age**: the existing cluster DR identity `age1chmmudv…` (gate0-dr) — its private `keys.txt`
+  (usually `~/.config/sops/age/keys.txt`). **0 new keys.**
+
+A helper script does all three seals in place — run it from a workstation with `kubectl` + `kubeseal`:
 
 ```sh
-# admin bootstrap + access-key encryption (the encryption key MUST stay stable — see warning above):
-kubectl create secret generic semaphore-admin -n semaphore \
-  --from-literal=SEMAPHORE_ADMIN=admin \
-  --from-literal=SEMAPHORE_ADMIN_NAME=admin \
-  --from-literal=SEMAPHORE_ADMIN_EMAIL=admin@eli.kr \
-  --from-literal=SEMAPHORE_ADMIN_PASSWORD='<choose-a-strong-one>' \
-  --from-literal=SEMAPHORE_ACCESS_KEY_ENCRYPTION="$(head -c32 /dev/urandom | base64)" \
-  --dry-run=client -o yaml | kubeseal --controller-namespace sealed-secrets --format yaml \
-  > /tmp/ss-admin.yaml   # paste encryptedData into workloads/semaphore/sealedsecret-admin.yaml
-
-# SSH key for root@10.0.0.1 (OpenWrt — HIGH blast radius) + ubuntu@Oracle:
-kubectl create secret generic semaphore-ssh -n semaphore \
-  --from-file=id_ed25519=/path/to/semaphore_ansible_ed25519 \
-  --dry-run=client -o yaml | kubeseal --controller-namespace sealed-secrets --format yaml \
-  > /tmp/ss-ssh.yaml     # → workloads/semaphore/sealedsecret-ssh.yaml
-
-# the sops AGE key (the SAME single cluster DR identity age1chmmudv… — 0 new keys, gate0-dr):
-kubectl create secret generic semaphore-age -n semaphore \
-  --from-file=keys.txt=/path/to/age/keys.txt \
-  --dry-run=client -o yaml | kubeseal --controller-namespace sealed-secrets --format yaml \
-  > /tmp/ss-age.yaml     # → workloads/semaphore/sealedsecret-age.yaml
+cd workloads/semaphore
+./seal-secrets.sh ~/.ssh/id_ed25519 ~/.ssh/oracle_proxy ~/.config/sops/age/keys.txt
+# prompts once for the admin password; writes sealedsecret-{admin,ssh,age}.yaml with real ciphertext.
 ```
 
-Paste each `encryptedData` block into the matching stub file, then **uncomment the three
-`sealedsecret-*.yaml` lines in `workloads/semaphore/kustomization.yaml`** and commit. ArgoCD syncs →
-the pod starts. (`kubectl kustomize workloads/semaphore` must still build after uncommenting.)
+> 🔴 The script generates `SEMAPHORE_ACCESS_KEY_ENCRYPTION` **once**. It encrypts the access keys
+> stored in BoltDB — on any future RESEAL, reuse the SAME value (don't regenerate), or every stored
+> key is orphaned. Recover the existing value with:
+> `kubectl -n semaphore get secret semaphore-admin -o jsonpath='{.data.SEMAPHORE_ACCESS_KEY_ENCRYPTION}' | base64 -d`
+
+Then **uncomment the three `sealedsecret-*.yaml` lines in
+`workloads/semaphore/kustomization.yaml`**, verify `kubectl kustomize workloads/semaphore` still
+builds, and commit+push. ArgoCD syncs → the pod starts.
+
+(Manual equivalent if you'd rather not run the script: `kubectl create secret generic … --dry-run=client
+-o yaml | kubeseal --controller-namespace sealed-secrets --format yaml` for each — `semaphore-admin`
+with the 5 admin literals, `semaphore-ssh` with `--from-file=openwrt=<key> --from-file=oracle=<key>`,
+`semaphore-age` with `--from-file=keys.txt=<key>` — then overwrite the matching stub file.)
 
 ### 1b. 🔴 The runner needs the `sops` binary
 
@@ -84,8 +83,24 @@ before trusting any template.
 
 1. **Repository**: `https://github.com/sushistack/home.server` (or its SSH URL), path used by templates
    = `configs/openwrt/`. Branch `master`.
-2. **Key Store / SSH**: the SSH key is mounted at `/keys/ssh/id_ed25519`. Either set the inventory to
-   `ansible_ssh_private_key_file=/keys/ssh/id_ed25519`, or register it as a Login-With-Key entry. The
+2. **SSH keys** — both are mounted under `/keys/ssh/` (from the `semaphore-ssh` secret):
+   `/keys/ssh/openwrt` (root@10.0.0.1) and `/keys/ssh/oracle` (ubuntu@Oracle). The repo
+   `inventory.yml` sets no key file (it relies on the workstation's ssh-agent, absent in the pod), so
+   give Semaphore a **static inventory** that points each host at its key — create it in the Semaphore
+   UI (Inventory → type: Static, paste):
+   ```yaml
+   all:
+     children:
+       openwrt:
+         hosts:
+           gateway: { ansible_host: 10.0.0.1, ansible_user: root,
+                      ansible_ssh_private_key_file: /keys/ssh/openwrt }
+       oracle:
+         hosts:
+           oracle-proxy: { ansible_host: 217.142.236.162, ansible_user: ubuntu, ansible_become: true,
+                           ansible_ssh_private_key_file: /keys/ssh/oracle }
+   ```
+   (Or register each key as a Login-With-Key Key Store entry sourced from the mounted file.) The
    **source stays the SealedSecret/git** — never hand-type the SOPS app secrets into the Key Store
    (Reconciliation 4). The age key is already mounted at `/keys/age/keys.txt`; the Deployment exports
    `SOPS_AGE_KEY_FILE` so `community.sops` decrypts at play runtime — nothing to paste.

@@ -103,9 +103,10 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: semaphore-data
-        # SSH private key for root@10.0.0.1 + Oracle ubuntu@… — 0400, read by root. The operator wires
-        # it into the Semaphore project (inventory ansible_ssh_private_key_file=/keys/ssh/id_ed25519,
-        # or a native Login-With-Key Key Store entry). Source stays the SealedSecret/git, not hand-typed.
+        # SSH keys — 0400, read by root. The semaphore-ssh secret holds TWO files (existing keys, no
+        # new ones): /keys/ssh/openwrt (root@10.0.0.1, HIGH blast radius) + /keys/ssh/oracle
+        # (ubuntu@Oracle). The Semaphore static inventory points each host at its file (runbook §1c).
+        # Source stays the SealedSecret/git, not hand-typed. Sealed by seal-secrets.sh (Task 1b).
         - name: ssh
           secret:
             secretName: semaphore-ssh
