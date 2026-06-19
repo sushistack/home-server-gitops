@@ -41,9 +41,11 @@ dir into a Longhorn PVC via a one-shot ingest Job) applies — unlike miniflux's
   that decrypts in the UI on k3s — before the ingress flip — is the proof the key migrated.**
   **Update 2026-06-19:** Compose retired (Story 5.4); the Compose `config`-file origin is gone — the
   `n8n-secrets` SealedSecret is now the **sole source** for the key (see DECISIONS.md).
-- **Parallel run / reversible rollback.** Compose n8n + n8n-backup stay **PARKED** (stopped, never
-  `down`); rollback is the cloudflared route for `${SECRET:DOMAIN_N8N}` flipped back to NPM within the
-  pre-lowered TTL. The flip never tears Compose down — same machine as every Epic 4 cutover.
+- **Parallel run / reversible rollback.** _(Superseded 2026-06-19, Story 5.4 — see DECISIONS.md: Compose
+  retired, k3s is the sole production path; recovery is now R2 restore into a scratch ns / `git revert` +
+  ArgoCD sync, per [n8n.md](../runbooks/n8n.md).)_ At cutover time: Compose n8n + n8n-backup stayed
+  **PARKED** (stopped, never `down`); rollback was the cloudflared route for `${SECRET:DOMAIN_N8N}` flipped
+  back to NPM within the pre-lowered TTL. The flip never tore Compose down — same machine as every Epic 4 cutover.
 - **Drop the docker.sock mount.** Compose mounted `/var/run/docker.sock` into n8n (historically for
   the offen backup sidecar's label-based `docker stop`); k3s has no docker socket and mounting one is
   a privilege escalation. Dropped. Workflows that shell out to Docker break and need a k8s-native
