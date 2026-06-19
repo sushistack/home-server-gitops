@@ -10,8 +10,8 @@ resources:
   - ingressroute.yaml       # web->websecure (TLS serve + HTTP->HTTPS redirect); host tokenized; WS-safe
   - certificate.yaml        # per-host cert-manager Certificate -> vaultwarden-tls (letsencrypt-prod)
   - backup-cronjob.yaml     # online sqlite3 .backup + durable companions -> R2
-  - sealedsecret.yaml       # vaultwarden-backup-r2: R2 cred for the CronJob (STUB — reseal at cutover)
-  - sealedsecret-admin.yaml # vaultwarden-secrets: ADMIN_TOKEN (envFrom: secretRef) (STUB — reseal at cutover)
+  - sealedsecret.yaml       # vaultwarden-backup-r2: R2 cred for the CronJob (REAL — sealed at the 2026-06-19 cutover)
+  - sealedsecret-admin.yaml # vaultwarden-secrets: ADMIN_TOKEN (envFrom: secretRef) (REAL — sealed at the 2026-06-19 cutover)
 # NOT included on purpose:
 #   _cutover/   -> one-shot ingest Job, applied by hand during the cutover (must NOT be ArgoCD-managed)
 

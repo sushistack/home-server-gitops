@@ -10,7 +10,10 @@ metadata:
 spec:
   replicas: 1
   # Recreate -> old pod dies before the new starts, so a stuck rollout is a full outage with no
-  # healthy fallback. 120s (vs the 600s default) surfaces ArgoCD Degraded fast for a quick git revert.
+  # healthy fallback. 180s (vs the 600s default) surfaces ArgoCD Degraded fast for a quick git revert,
+  # while still clearing the startupProbe's 150s (30*5s) WAL-replay budget below — else a legit slow
+  # boot (the unclean-stop replay the startupProbe tolerates) trips Degraded before the probe gives up.
+  # Same 180/150 relationship as n8n (Story 4.7).
   progressDeadlineSeconds: 180
   strategy:
     type: Recreate
@@ -26,12 +29,12 @@ spec:
       terminationGracePeriodSeconds: 30   # WAL checkpoint flush on shutdown (= Compose stop_grace_period)
       containers:
         - name: vaultwarden
-          # vaultwarden/server is :latest in Compose (AR29 forbids :latest) -> pin by digest.
-          # 🔴 OPERATOR (cutover, live): pin to the EXACT digest of the image running on Compose so the
-          # cutover does NOT trigger a surprise DB schema migration. Capture it at the window with:
-          #   docker buildx imagetools inspect vaultwarden/server:latest   # -> repo@sha256:...
-          # then replace the placeholder below via PR (GitOps-revertible). This digest IS the version
-          # SSOT for vaultwarden (workload images live in their manifest, not versions.yaml).
+          # vaultwarden/server is :latest in Compose (AR29 forbids :latest) -> pinned by digest.
+          # PINNED at the 2026-06-19 cutover to the EXACT digest of the image then running on Compose,
+          # so the cutover did NOT trigger a surprise DB schema migration. This digest IS the version
+          # SSOT for vaultwarden (workload images live in their manifest, not versions.yaml). To bump:
+          # capture the new digest (`docker buildx imagetools inspect vaultwarden/server:<tag>`) and
+          # replace below via PR (GitOps-revertible).
           image: vaultwarden/server@sha256:d626d04934cd1192ad8ced1adb975099fca78cec33ab467d2d3c923cde7f3b0c
           ports:
             - containerPort: 80   # vaultwarden internal port (Compose host-mapped ${VAULTWARDEN_PORT:-8012} -> 80)
