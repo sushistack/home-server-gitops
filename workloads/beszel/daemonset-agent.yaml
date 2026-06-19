@@ -1,0 +1,92 @@
+# Story 5.7 — Beszel AGENT: one pod per k3s node (10.0.0.101–103) reporting host CPU/mem/disk/net to
+# the hub. DaemonSet is NEW to this repo — kept minimal (host mounts + public-key env), per spec.
+#
+# hostNetwork so the agent LISTENs on the node's own IP:45876 and the hub reaches it node-by-node.
+# Host /proc + /sys (ro) give gopsutil the real host stats (not the container's). The 3 nodes are k3s
+# SERVERS (control-plane) — tolerate the control-plane/master taints so the agent lands on every node.
+#
+# NOT built (AC3e, Plane 0): no agent is force-installed on the Proxmox host or the `storage` LXC —
+# that is an OPTIONAL documented operator binary install (runbook), not a manifest here.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: beszel-agent
+  labels:
+    app.kubernetes.io/name: beszel-agent
+    app.kubernetes.io/component: agent
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: beszel-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: beszel-agent
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+        # k3s servers usually run workloads untainted, but tolerate the standard control-plane taints
+        # so the DaemonSet is guaranteed a pod on every node even if a node is tainted later.
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: beszel-agent
+          # henrygd/beszel-agent. CONFIRM the current stable tag at install + SWAP TO @sha256 digest at
+          # cutover (AR29):
+          #   docker buildx imagetools inspect henrygd/beszel-agent:0.18.7
+          # NOTE on the connection model: these env vars (KEY + LISTEN, no TOKEN/HUB_URL) are Beszel's
+          # SSH connection mode — the agent LISTENs and the HUB DIALS it at node-IP:45876 (the operator
+          # "Add System" by IP+port, runbook §3). Current Beszel also offers a WebSocket mode where the
+          # AGENT dials out and needs KEY + TOKEN + HUB_URL instead; if you choose that mode, the env
+          # here must change accordingly. SSH mode is the one wired here.
+          image: henrygd/beszel-agent:0.18.7
+          env:
+            - name: LISTEN
+              value: "45876"
+            - name: KEY                       # hub PUBLIC key — ConfigMap, not a secret (AC3b)
+              valueFrom:
+                configMapKeyRef:
+                  name: beszel-agent-key
+                  key: KEY
+          # tcpSocket on the LISTEN port (repo convention — excalidraw/anytype/karakeep). The agent
+          # binds 45876 regardless of whether KEY matches the hub, so this reflects "binary is up" — the
+          # ONLY health signal a hostNetwork DaemonSet otherwise has (a node-level bind conflict would
+          # otherwise crash-loop invisibly to ArgoCD).
+          readinessProbe:
+            tcpSocket:
+              port: 45876
+          livenessProbe:
+            tcpSocket:
+              port: 45876
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: proc
+              mountPath: /proc
+              readOnly: true
+            - name: sys
+              mountPath: /sys
+              readOnly: true
+            # Optional per-container stats: mount the k3s containerd socket. Off by default — host
+            # CPU/mem/disk/net (the gap we fill) needs only /proc + /sys. Enable per operator if wanted.
+            # - name: containerd-sock
+            #   mountPath: /run/k3s/containerd/containerd.sock
+      volumes:
+        - name: proc
+          hostPath:
+            path: /proc
+        - name: sys
+          hostPath:
+            path: /sys
+        # - name: containerd-sock
+        #   hostPath:
+        #     path: /run/k3s/containerd/containerd.sock

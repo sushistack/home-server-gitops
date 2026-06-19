@@ -1,0 +1,12 @@
+# Story 5.7 — per-host production TLS (letsencrypt-prod, DNS-01; no public reachability needed).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: beszel-tls
+spec:
+  secretName: beszel-tls
+  dnsNames:
+    - "${SECRET:DOMAIN_BESZEL}"
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer

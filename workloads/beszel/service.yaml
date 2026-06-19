@@ -1,0 +1,14 @@
+# Story 5.7 — hub ClusterIP; exposure via the internal-only Traefik IngressRoute. The agents are NOT
+# fronted by a Service (the hub dials each node's hostNetwork IP:45876 directly).
+apiVersion: v1
+kind: Service
+metadata:
+  name: beszel
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: beszel
+  ports:
+    - name: http
+      port: 8090
+      targetPort: 8090

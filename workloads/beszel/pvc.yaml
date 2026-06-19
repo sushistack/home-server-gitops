@@ -1,0 +1,17 @@
+# Story 5.7 — Beszel hub SQLite (/beszel_data: monitor pairings + short-horizon metrics history).
+# Small, Longhorn-replicated, RWO → Recreate. Prune=false + Retain. No backup CronJob: pairings are
+# reproducible config and the metrics are short-horizon — losing them costs minutes, not data (the
+# deliberate no-backup-actor stance).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: beszel-data
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi

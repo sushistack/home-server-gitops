@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Story 5.7 — Beszel: ONE logical workload, TWO components (hub Deployment + agent DaemonSet), one
+# namespace (the komga two-component shape). One Application via the `workloads` ApplicationSet.
+# No SealedSecret: the agent KEY is the hub's PUBLIC key (configmap-agent-key.yaml).
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - deployment-hub.yaml
+  - service.yaml
+  - ingressroute.yaml
+  - certificate.yaml
+  - configmap-agent-key.yaml
+  - daemonset-agent.yaml
+
+# Only the SHARED identity here (komga rule): app.kubernetes.io/name + /component DIFFER per component
+# (hub=beszel, agent=beszel-agent), hand-written inline — putting `name` here would clobber the agent's
+# template label and break its selector. includeSelectors:false keeps these out of selectors.
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/instance: beszel
+      app.kubernetes.io/part-of: beszel
+      app.kubernetes.io/managed-by: argocd

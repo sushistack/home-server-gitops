@@ -1,0 +1,44 @@
+# Story 5.7 — Beszel hub INTERNAL-only. No cloudflared tunnel rule + LAN-only OpenWrt DNS override →
+# 10.0.0.101 (staged in runbook). NO ipAllowList (tunnel egresses from a LAN IP → an allowlist would
+# admit internet-via-tunnel; "no tunnel rule + LAN-only DNS" is the correct gate).
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: beszel-redirect-https
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: beszel
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`${SECRET:DOMAIN_BESZEL}`)
+      kind: Rule
+      services:
+        - name: beszel
+          port: 8090
+  tls:
+    secretName: beszel-tls
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: beszel-redirect
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`${SECRET:DOMAIN_BESZEL}`)
+      kind: Rule
+      middlewares:
+        - name: beszel-redirect-https
+      services:
+        - name: beszel
+          port: 8090
