@@ -145,3 +145,18 @@ workloads:
   calibre:
     manifest: workloads/calibre/deployment.yaml
     image: lscr.io/linuxserver/calibre-web:0.6.24
+  # Story 5.7 — Day-2 self-service tooling (internal-only). Tags are PLACEHOLDERS pinned now so the
+  # lint passes; CONFIRM the exact current stable tag + SWAP TO @sha256 digests at install/cutover
+  # (AR29 — each manifest comment carries the `imagetools inspect` command).
+  semaphore:
+    manifest: workloads/semaphore/deployment.yaml
+    image: semaphoreui/semaphore:v2.16.21
+  heimdall:
+    manifest: workloads/heimdall/deployment.yaml
+    image: lscr.io/linuxserver/heimdall:2.6.3
+  beszel:
+    manifest: workloads/beszel/deployment-hub.yaml
+    image: henrygd/beszel:0.18.7
+  beszel-agent:
+    manifest: workloads/beszel/daemonset-agent.yaml
+    image: henrygd/beszel-agent:0.18.7
