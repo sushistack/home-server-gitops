@@ -647,6 +647,14 @@ material, IP, or `*.<zone>` host appears; Plane 0 secrets stay off-repo.
   OpenWrt `.101` override → Traefik. kuma now matches the 5.7 internal-only pattern. The external
   uptime watcher (AC6e) therefore targets `notify.eli.kr` (public), not kuma. (Optional cleanup: delete
   the kuma.eli.kr public DNS record for NXDOMAIN parity — needs Zone:DNS:Edit.) | Story 5.8 (AC6a/6e)
+- 2026-06-19 | **proxmox / openwrt / kvm are INTERNAL-only (operator decision, post-cutover).** These
+  three are sensitive infra UIs (hypervisor root / gateway admin / hardware+power control). They were
+  public via NPM before (public DNS + NPM conf), but on review the operator locked them to LAN-only:
+  removed their cloudflared ingress rules → external = 404 (wildcard default-deny), LAN served via the
+  OpenWrt `.101` override → Traefik (their edge-proxies Service/EndpointSlice/Certificate/IngressRoute
+  stay — they front LAN traffic). Remote access is WireGuard/LAN, not the public edge. jellyfin + immich
+  stay PUBLIC (media, own auth — operator's call). (Optional: delete their public DNS records for
+  NXDOMAIN parity.) | Story 5.8 (AC6b)
 - 2026-06-19 | **Heimdall tile list lives in the runbook (reproducibility, honoring 5.7's claim).** 5.7
   shipped Heimdall with no backup actor on the claim its config is "trivially reproducible." Hand-clicking
   tiles and walking away would quietly break that, so the **runbook tile-list (or an exported JSON) is the
