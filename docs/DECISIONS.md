@@ -492,3 +492,36 @@ material, IP, or `*.<zone>` host appears; Plane 0 secrets stay off-repo.
   Grafana; it's +3 branches on the existing kubectl poller. **ntfy self-monitoring gap is unchanged**
   (uptime-kuma covers ntfy liveness out-of-band) — deliberately not fixed in this slice.
 - **No per-slice ADR** (consistent with 4.2) — recorded here + in the runbook; AC3 accepts that.
+
+## Infra-stack retirement + Phase-3 monitoring decision (Story 5.5)
+
+- **2026-06-19 | portainer + homepage retired from `docker-compose.infra.yml`; NPM / uptime-kuma /
+  cloudflared kept.** Downstream of 5.4 (app Compose stack already retired) — that is what makes
+  portainer redundant. **portainer** removed: its only role was managing the now-retired Compose app
+  stack → fully superseded by the ArgoCD UI + `kubectl`. **homepage** removed: its ~12 links were
+  folded into the existing **Karakeep** (`keep.eli.kr`, on k3s) — **no replacement dashboard service
+  is introduced** (AC1). The homepage runtime config dir + its CD special-case (`deploy.js`) +
+  `ENV_HOMEPAGE_ALLOWED_HOSTS` / `HOMEPAGE_ALLOWED_HOSTS` / `PORTAINER_PORT` / `HOMEPAGE_PORT` env
+  vars were pruned so a `push to master` cannot recreate them. (home.server repo; FR27, AC1)
+- **uptime-kuma KEPT as the external/LAN HTTP monitor — this resolves the architecture's Phase-3
+  observability flag (architecture.md 162–164).** Kuma provides the *public-URL / edge* perspective
+  the in-cluster ntfy poller (4.2/5.1) is structurally blind to: it catches a **healthy pod whose
+  public `*.eli.kr` URL is broken at cloudflared / Traefik / DNS / cert**. The two are complementary,
+  not duplicates (Kuma = public HTTP probe from LAN; ops-alerter = in-cluster pod/CRD state). **No
+  duplicate cluster-internal monitoring is built that is blind to Kuma** — i.e. the Phase-3 choice
+  "keep Kuma vs. stand up Prometheus" is resolved **keep Kuma**; the metrics-stack option stays
+  deferred (consistent with 4.2/5.1 AC4). (AC2, NFR15)
+- **NPM KEPT — out of scope, do not "helpfully" remove.** Traefik absorbs the NPM role only *per
+  migrated host* (each `*.eli.kr` host has a cloudflared rule → k3s `10.0.0.101` inserted *before* the
+  `*.eli.kr` wildcard → NPM fallback). NPM is still the **wildcard fallback edge** and fronts the kept
+  infra UIs publicly (`kuma.eli.kr`); removing it would break `kuma.eli.kr`. Its eventual full
+  retirement is a *separate* concern. (architecture.md 145, 158–164)
+- **Plane 0 untouched.** cloudflared (public tunnel) lives in this same compose file but is Plane 0
+  and stays running; `docker compose -f docker-compose.infra.yml up -d` leaves NPM/cloudflared
+  unchanged (only uptime-kuma recreates, to drop its orphan `HOMEPAGE_ALLOWED_HOSTS` env). Nothing
+  under OpenWrt / Oracle / Proxmox was touched. (AC3)
+- **Operator out-of-band (not git):** add homepage's surviving links to Karakeep (drop the dying
+  `portainer.eli.kr` link); `docker rm -f portainer homepage` on `10.0.0.20` after the file change
+  lands (CD `up -d` won't remove orphans); delete the `portainer.eli.kr` + homepage proxy-host
+  entries in the NPM admin UI (NPM config is runtime data, not in git); remove the now-orphan
+  `ENV_HOMEPAGE_ALLOWED_HOSTS` GitHub repo secret.
