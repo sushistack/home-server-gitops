@@ -17,8 +17,10 @@ Self-hosted bookmark / read-it-later archive at `${SECRET:DOMAIN_KEEP}`. Four co
   `terminationGracePeriodSeconds: 30` (SQLite WAL — never two pods on one WAL, AR14). Reaches meili
   `:7700` and chrome `:9222`; is reached by the bridge `:3000`.
 - **`karakeep-meilisearch`** (`:7700`) — search index, gated by a master key. INTERNAL — reachable
-  from `karakeep-web` ALONE (NetworkPolicy, AC2). Index is REBUILDABLE: fresh PVC `karakeep-meili`,
-  reindexed from `db.db` on first web boot (Reconciliation 5). No dump backup.
+  from `karakeep-web` ALONE (NetworkPolicy, AC2). Index is REBUILDABLE from `db.db`, but NOT
+  automatically: reindex is incremental (only fires on bookmark create/update), so a fresh PVC
+  `karakeep-meili` stays EMPTY until you run Admin → "Reindex all bookmarks" once (Reconciliation 5).
+  No dump backup.
 - **`karakeep-chrome`** (`:9222`) — headless Chrome for crawl/screenshot. Binds an UNAUTHENTICATED
   CDP on `0.0.0.0:9222` — the whole reason AC2 exists. INTERNAL — from `karakeep-web` ALONE.
   Stateless (no PVC). Fetches the bookmarked pages, so it needs egress 80/443.
@@ -52,11 +54,12 @@ kubectl -n argocd get applications.argoproj.io karakeep \
 ## If DOWN do this (in order)
 
 1. **web pod not Ready?** `kubectl -n karakeep describe pod -l app.kubernetes.io/name=karakeep-web`.
-   On boot it opens SQLite (+ WAL replay after an unclean stop) and kicks off the meili reindex; the
-   `startupProbe` (30×5s) covers that. If it crash-loops, check `kubectl -n karakeep logs deploy/karakeep-web`.
+   On boot it opens SQLite (+ WAL replay after an unclean stop); the `startupProbe` (30×5s) covers that.
+   (Boot does NOT rebuild the meili index — see step 2.) If it crash-loops, check `kubectl -n karakeep logs deploy/karakeep-web`.
 2. **meili not Ready / web can't search?** `kubectl -n karakeep logs deploy/karakeep-meilisearch`.
-   If the index was lost it rebuilds from `db.db` — search is briefly degraded, the bookmark manager
-   still works. Master-key mismatch shows as 403 from web → meili (check `MEILI_MASTER_KEY` in the
+   If the index was lost (or empty after cutover) it does NOT self-rebuild — bookmarks list fine but
+   SEARCH returns 0 hits. Fix: Admin → Background Jobs → "Reindex all bookmarks" (re-enqueues every
+   bookmark; verified 2026-06-19 cutover). Master-key mismatch shows as 403 from web → meili (check `MEILI_MASTER_KEY` in the
    `karakeep-secrets` Secret matches what web uses; both come from the same SealedSecret).
 3. **chrome not Ready?** `kubectl -n karakeep logs deploy/karakeep-chrome`. Crawl/screenshot only
    (no bookmark loss). If web can't reach the CDP, check the NetworkPolicy DNS-egress (step 5) and

@@ -5,7 +5,10 @@
 # scaled to 0) — RWO means the volumes can't be held by two pods on different nodes.
 #
 # meili is NOT ingested here: its index is REBUILDABLE (Reconciliation 5) — the fresh karakeep-meili
-# PVC reindexes from db.db on first web boot. Only db.db's dir and the bridge dedup map are copied.
+# PVC carries no index. Only db.db's dir and the bridge dedup map are copied. NOTE: karakeep does NOT
+# auto-rebuild the index on web boot — reindex is incremental (only on bookmark create/update). After
+# cutover the index is EMPTY (bookmarks list fine, but SEARCH returns 0) until you run Admin -> Background
+# Jobs -> "Reindex all bookmarks" ONCE (step 4 below). Verified live 2026-06-19.
 #
 # CUTOVER SEQUENCE (live, operator-run; full procedure in docs/runbooks/karakeep.md):
 #   # 0) pre-announce ≤10-min window; pre-lower the public DNS/edge TTL for keep.<public-zone> (rollback window)
@@ -20,7 +23,9 @@
 #   kubectl -n karakeep cp ./data/karakeep-anytype-bridge/. "${pod#pod/}:/data-bridge/"
 #   kubectl -n karakeep exec "${pod#pod/}" -- sh -c 'ls -la /data-web /data-bridge'
 #   kubectl -n karakeep delete -f workloads/karakeep/_cutover/ingest-job.yaml
-#   # 4) let ArgoCD bring up the 4 Deployments; meili reindexes; confirm 4 pods Ready + App Synced/Healthy
+#   # 4) let ArgoCD bring up the 4 Deployments; confirm 4 pods Ready + App Synced/Healthy. Then in the
+#   #    web UI: Admin -> Background Jobs -> "Reindex all bookmarks" (the meili index is empty until you do
+#   #    this — it does NOT auto-rebuild on boot). Confirm search returns hits afterwards.
 #   #    VERIFY (NFR4): login at the k3s endpoint + LIST BOOKMARKS = match live; spot-check an asset;
 #   #    confirm db.db byte-identical to the quiesced copy (0 bytes lost).
 #   # 5) flip keep.<public-zone> cloudflared route NPM -> Traefik; a real login+list verifies in-window;
