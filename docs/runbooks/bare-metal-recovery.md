@@ -97,6 +97,18 @@ Proxmox host  →  OpenWrt router  →  k3s VMs  →  etcd quorum=3  →  [SEALI
 
 5. **Restore PVs from R2** (per volume that needs data — see §5).
 
+6. **Re-apply the edge-proxy EndpointSlices (5.8).** ArgoCD's `resource.exclusions`
+   drops `discovery.k8s.io/EndpointSlice`, so the 5 NPM-replacement edge hosts
+   (`jellyfin`/`immich`/`proxmox`/`openwrt`/`kvm`) come back with their Service +
+   IngressRoute synced but **zero endpoints → Traefik returns 503** until the static
+   slices are applied out of band:
+   ```sh
+   bash workloads/edge-proxies/apply-endpoints.sh   # idempotent; needs internal/tokens.env (IP_*)
+   ```
+   Verify: `kubectl -n edge-proxies get endpointslices` shows one per host, then each
+   host serves (200/302) through Traefik. (uptime-kuma is a real in-cluster workload —
+   not affected; only the selector-less edge Services need this.)
+
 ### 3a. Cold-boot leg (power-cycle — etcd SURVIVES, the everyday outage path)
 
 > This leg is what a **power outage** triggers, and is distinct from the bare-metal
@@ -245,6 +257,10 @@ EOF
   **deliberately not automated**: automating it would require the age identity
   to live on a cluster node, which defeats the OOB / Plane 0 design. VM
   provisioning + Ansible are scripted, not counted as discrete manual judgement.
+- **Edge-proxy slices (5.8):** one extra out-of-band `bash
+  workloads/edge-proxies/apply-endpoints.sh` (§3 step 6) on a full rebuild — it is a
+  scripted, idempotent re-apply (like provisioning), not a judgement step, but the 5
+  edge hosts stay 503 until it runs. ArgoCD cannot own these (EndpointSlice is excluded).
 
 **Rotation caveat.** The sealed-secrets controller can renew its key (adds a new
 `active`, keeps old ones). A stale export then cannot decrypt anything sealed
