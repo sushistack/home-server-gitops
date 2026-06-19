@@ -8,7 +8,7 @@
 #
 #   1. every versions.yaml `workloads.<svc>` image ref is present in its manifest
 #   2. every platform chartVersion is referenced by an argocd/apps Application
-#   3. nothing in the synced tree uses a floating `:latest` tag
+#   3. nothing in the synced tree uses a floating ref (`:latest` or an untagged name)
 #
 # Run locally (`bin/version-lint`) or in CI; `--list` prints the one-file answer
 # to "what is on what version". No yq/jq dependency — plain awk+grep.
@@ -47,7 +47,7 @@ while IFS=$'\t' read -r manifest image; do
   if [[ ! -f "$manifest" ]]; then
     echo "  ✗ $manifest — listed in versions.yaml but file missing"; fail=1; continue
   fi
-  if grep -qF "image: $image" "$manifest"; then
+  if grep -vE '^[[:space:]]*#' "$manifest" | grep -qF "image: $image"; then
     echo "  ✓ $manifest pins $image"
   else
     echo "  ✗ $manifest does NOT pin '$image' (versions.yaml drifted from the manifest — bump both in the same PR)"; fail=1
@@ -65,13 +65,21 @@ while read -r ver; do
   fi
 done < <(grep -E '^[[:space:]]+chartVersion:' "$VERSIONS" | awk '{print $2}')
 
-echo "== version-lint: no floating :latest in the synced tree =="
-# Match `image: ...:latest` (or bare `image: name` with no tag/digest is also a
-# floating ref) across what ArgoCD reconciles. Exclude comments.
-if grep -rnE '^\s*image:\s*\S+:latest\s*$' workloads/ infra/ argocd/ 2>/dev/null | grep -v '#'; then
-  echo "  ✗ :latest tag found above — pin an explicit tag or digest (enforcement rule)"; fail=1
+echo "== version-lint: no floating image refs (no :latest, no untagged) =="
+# A pinned ref must end in an explicit tag (not :latest) and/or an @sha256 digest.
+# Floating = `:latest`, OR a bare `image: name` with neither tag nor digest — both
+# resolve to a moving target at pull time. Scans what ArgoCD reconciles; strips
+# trailing comments and ignores valueless `image:` map keys (helm-style image.tag).
+# Skips workloads/_template (ApplicationSet exclude:true — the __IMAGE__ scaffold
+# is never synced).
+floating=$(grep -rnE --exclude-dir=_template '^[[:space:]]*image:[[:space:]]*[^[:space:]#]' workloads/ infra/ argocd/ 2>/dev/null \
+  | awk -F'image:' '{ r=$2; sub(/[[:space:]]*#.*/,"",r); gsub(/["[:space:]]/,"",r);
+      if (r ~ /:latest$/ || r !~ /(@sha256:[0-9a-f]+|:[A-Za-z0-9_][A-Za-z0-9._-]*)$/) print }')
+if [[ -n "$floating" ]]; then
+  echo "$floating"
+  echo "  ✗ floating image ref above — pin an explicit tag (not :latest) or an @sha256 digest (enforcement rule)"; fail=1
 else
-  echo "  ✓ no :latest tags"
+  echo "  ✓ all image refs pinned (no :latest, no untagged)"
 fi
 
 if [[ $fail -ne 0 ]]; then
