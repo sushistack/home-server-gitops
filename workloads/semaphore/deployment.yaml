@@ -36,6 +36,11 @@ spec:
         app.kubernetes.io/name: semaphore
     spec:
       terminationGracePeriodSeconds: 30
+      # 🔴 The Service is named `semaphore`, so k8s would auto-inject SEMAPHORE_PORT=tcp://<svc-ip>:3000
+      # — and Semaphore reads SEMAPHORE_PORT as its OWN bind-port config, panicking on the tcp:// URL
+      # ("value of field 'Port' is not valid"). Disable the legacy service-link env injection entirely
+      # (we address services by DNS, not these vars).
+      enableServiceLinks: false
       securityContext:
         runAsUser: 0          # explicit root — see header (0400 ssh/age mounts, no fsGroup)
         runAsGroup: 0
