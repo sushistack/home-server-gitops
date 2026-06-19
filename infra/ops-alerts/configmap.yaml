@@ -38,9 +38,10 @@ data:
       echo "FATAL: kube-apiserver unreachable — check ops-alerts egress NetworkPolicy (apiserver allow)"; exit 1; }
 
     now=$(date -u +%s)
+    NL="$(printf '\n')"   # ntfy renders \n as a line break — bodies are "<what> ${NL}→ <action>"
 
     notify() {  # $1 topic, $2 title, $3 body  — failure to publish is logged, never aborts the poll
-      # JSON publish (not X-Title/-d headers): HTTP headers are latin-1, so 한글/이모지 in the
+      # JSON publish (not X-Title/-d headers): HTTP headers are latin-1, so the emoji in the
       # title/body would mojibake. jq builds the payload (safe escaping) — already a dependency.
       payload=$(jq -nc --arg topic "$1" --arg t "$2" --arg m "$3" \
         '{topic:$topic, title:$t, message:$m, priority:5}') \
@@ -64,7 +65,7 @@ data:
       | select(($exp - $now) <= ($warn * 86400))
       | "\(.metadata.namespace)/\(.metadata.name)\t\(.status.notAfter)"' \
     | while IFS="$(printf '\t')" read -r cert exp; do
-        notify "$NTFY_TOPIC_CRITICAL" "🔐 인증서 만료 임박: $cert" "인증서 $cert 가 $exp 에 만료됩니다 (${CERT_WARN_DAYS}일 이내 — 자동 갱신이 실패하고 있을 수 있어요)"
+        notify "$NTFY_TOPIC_CRITICAL" "🔐 Certificate expiring: $cert" "Expires $exp — within ${CERT_WARN_DAYS}d, so auto-renew is likely failing. ${NL}→ kubectl describe certificate, then inspect the Order / Challenge (usually DNS-01 or issuer)."
       done
 
     # (b) Longhorn node disk >= 80%  (usage = 1 - storageAvailable/storageMaximum)
@@ -76,7 +77,7 @@ data:
       | select($used >= $pct)
       | "\($node)\t\(.key)\t\($used | floor)"' \
     | while IFS="$(printf '\t')" read -r node disk used; do
-        notify "$NTFY_TOPIC_CRITICAL" "💾 스토리지 부족: $node" "$node 의 Longhorn 디스크 $disk 사용률 ${used}% (임계치 ${DISK_PCT}% 초과)"
+        notify "$NTFY_TOPIC_CRITICAL" "💾 Storage low: $node" "Longhorn disk $disk is ${used}% full (threshold ${DISK_PCT}%). ${NL}→ Free space or expand the disk in the Longhorn UI."
       done
 
     # Stateful namespaces = those carrying a <service>-backup CronJob (the Story 4.1 backup-actor
@@ -94,7 +95,7 @@ data:
         .items[] | select((.status.readyReplicas // 0) < (.spec.replicas // 0))
         | "\(.kind)/\(.metadata.name)\t\(.status.readyReplicas // 0)\t\(.spec.replicas // 0)"' \
       | while IFS="$(printf '\t')" read -r wl ready desired; do
-          notify "$NTFY_TOPIC_CRITICAL" "🔴 서비스 다운: $ns/$wl" "$ns/$wl 준비 상태 ${ready}/${desired} (상태저장 워크로드 비정상)"
+          notify "$NTFY_TOPIC_CRITICAL" "🔴 Service down: $ns/$wl" "Ready ${ready}/${desired} — stateful workload unhealthy. ${NL}→ kubectl -n $ns get pods, then describe / logs the not-ready pod."
         done
     done
 
@@ -105,7 +106,7 @@ data:
       .items[] | select((.status.failed // 0) >= 1) | select(.metadata.name | test("-(backup|restore)"))
       | "\(.metadata.namespace)/\(.metadata.name)\t\(.status.failed)"' \
     | while IFS="$(printf '\t')" read -r job failed; do
-        notify "$NTFY_TOPIC_CRITICAL" "❌ 백업/복원 실패: $job" "백업/복원 작업 $job 가 실패했습니다 (status.failed=${failed})"
+        notify "$NTFY_TOPIC_CRITICAL" "❌ Backup/restore failed: $job" "Job $job failed (status.failed=${failed}). ${NL}→ kubectl -n ${job%/*} logs job/${job#*/}; re-run after fixing creds / R2 / disk."
       done
 
     # ---- NFR15b: version/config drift (Story 5.1) ------------------------------------------------
@@ -130,7 +131,7 @@ data:
         )
       | "\($app)\tsync=\($sync) health=\($health)"' \
     | while IFS="$(printf '\t')" read -r app status; do
-        notify "$NTFY_TOPIC_OPS" "🌥️ ArgoCD 드리프트: $app" "$app 가 $status — 라이브 상태가 Git 핀과 다릅니다. \`argocd app diff $app\` 확인 후 \`git revert\`(설정 변경 되돌리기) 또는 \`argocd app sync\`"
+        notify "$NTFY_TOPIC_OPS" "🌥️ ArgoCD drift: $app" "$app is $status — live state differs from the Git pin. ${NL}→ argocd app diff $app: if the live change is wrong, git revert + argocd app sync; if intended, update Git to match."
       done
 
     # (f) k3s node version drift + (g) node NotReady — ONE nodes read, two branches (no extra RBAC).
@@ -143,13 +144,13 @@ data:
       | .metadata.name as $node
       | (.status.nodeInfo.kubeletVersion) as $ver
       | ([.status.conditions[] | select(.type=="Ready") | .status][0] // "Unknown") as $ready
-      | (if ($pin != "" and $ver != $pin) then "\($node)\tversion\t\($ver) (핀 \($pin))" else empty end),
+      | (if ($pin != "" and $ver != $pin) then "\($node)\tversion\t\($ver) (pin \($pin))" else empty end),
         (if $ready != "True" then "\($node)\tnotready\tReady=\($ready)" else empty end)' \
     | while IFS="$(printf '\t')" read -r node kind detail; do
         if [ "$kind" = "version" ]; then
-          notify "$NTFY_TOPIC_OPS" "⬆️ k3s 버전 드리프트: $node" "$node kubelet 버전이 $detail 과 다릅니다 — 노드가 수동 업그레이드된 것으로 보입니다. versions.yaml 핀으로 재정렬하거나 의도된 업그레이드면 핀을 올리세요"
+          notify "$NTFY_TOPIC_OPS" "⬆️ k3s version drift: $node" "kubelet is $detail — node was hand-upgraded. ${NL}→ Roll back to the pin, or bump versions.yaml (and K3S_PINNED_VERSION) if the upgrade is intended."
         else
-          notify "$NTFY_TOPIC_OPS" "🔴 노드 NotReady: $node" "$node 가 $detail 상태입니다 (노드 다운 — 단일 호스트 SPOF 신호; 호스트/노드 상태를 확인하세요)"
+          notify "$NTFY_TOPIC_OPS" "🔴 Node NotReady: $node" "$node is $detail — node down (single-host SPOF signal). ${NL}→ kubectl describe node $node and check the host (Proxmox VM up? kubelet running?)."
         fi
       done
 
@@ -179,14 +180,14 @@ data:
         # no-dedupe contract as the rest of this poller). lsd exits non-zero on error but 0 on empty,
         # so it distinguishes "can't reach R2" from "bucket is empty".
         if ! rclone lsd "r2:$SVC_BUCKET" >/dev/null 2>&1; then
-          notify "$NTFY_TOPIC_OPS" "🔌 R2 점검 불가" "ops-alerter가 R2(r2:$SVC_BUCKET)에 접근하지 못했습니다 — 용량/신선도/회전 점검을 건너뜁니다 (이 동안 백업 모니터링은 사각지대). R2 자격증명/네트워크/엔드포인트를 확인하세요"
+          notify "$NTFY_TOPIC_OPS" "🔌 R2 unreachable" "ops-alerter can't reach R2 (r2:$SVC_BUCKET) — skipping capacity / freshness / rotation checks (backup monitoring is blind meanwhile). ${NL}→ Check R2 credentials / network / endpoint."
         else
           # (a) capacity — total bytes per bucket vs threshold
           for b in "$SVC_BUCKET" "$LH_BUCKET"; do
             bytes=$(rclone size "r2:$b" --json 2>/dev/null | jq -r '.bytes // 0' 2>/dev/null || echo 0)
             gb=$(( bytes / 1073741824 ))
             if [ "$gb" -ge "$R2_THRESHOLD_GB" ]; then
-              notify "$NTFY_TOPIC_CRITICAL" "💽 R2 용량 임박: $b" "버킷 r2:$b 사용량 ${gb}GiB (임계치 ${R2_THRESHOLD_GB}GiB; 무료 한도 ~10GB). 오래된 백업 정리 또는 한도 상향이 필요합니다"
+              notify "$NTFY_TOPIC_CRITICAL" "💽 R2 capacity: $b" "Bucket r2:$b is ${gb}GiB (threshold ${R2_THRESHOLD_GB}GiB; free tier ~10GB). ${NL}→ Prune old backups or raise the limit."
             fi
           done
 
@@ -205,14 +206,14 @@ data:
                 ( if ($now - .oldest) > $ret  then "OLD\t\(.svc)\t\((($now-.oldest)/86400)|floor)"  else empty end )' \
           | while IFS="$(printf '\t')" read -r kind svc age; do
               if [ "$kind" = "STALE" ]; then
-                notify "$NTFY_TOPIC_CRITICAL" "🥪 백업 신선도 경고: $svc" "r2:$SVC_BUCKET/$svc/ 최신 객체가 ${age}시간 전입니다 — 백업 액터가 조용히 멈췄을 수 있어요 (작업 실패 알림과는 별개). 해당 \`${svc}-backup\` CronJob 로그를 확인하세요"
+                notify "$NTFY_TOPIC_CRITICAL" "🥪 Backup stale: $svc" "r2:$SVC_BUCKET/$svc/ newest object is ${age}h old — the backup actor may have silently stopped (separate from job-failure alerts). ${NL}→ Check the ${svc}-backup CronJob logs."
               else
-                notify "$NTFY_TOPIC_CRITICAL" "🗑️ 백업 미회전: $svc" "r2:$SVC_BUCKET/$svc/ 가장 오래된 객체가 ${age}일 전입니다 (보존 ${R2_RETENTION_DAYS}일 초과) — 회전(rclone delete)이 실패 중입니다 (4.8 || true 사각지대). 회전 로직/권한을 확인하세요"
+                notify "$NTFY_TOPIC_CRITICAL" "🗑️ Backup not rotating: $svc" "r2:$SVC_BUCKET/$svc/ oldest object is ${age}d old (retention ${R2_RETENTION_DAYS}d exceeded) — rotation (rclone delete) is failing. ${NL}→ Check the rotation logic / permissions."
               fi
             done
         fi
       else
-        notify "$NTFY_TOPIC_OPS" "🔌 R2 점검 불가" "ops-alerter가 rclone 설치에 실패했습니다 (apk CDN 확인) — 이번 폴에서 R2 용량/신선도/회전 점검을 건너뜁니다"
+        notify "$NTFY_TOPIC_OPS" "🔌 R2 unreachable" "ops-alerter failed to install rclone (check apk CDN) — skipping R2 capacity / freshness / rotation checks this poll."
       fi
     fi
 

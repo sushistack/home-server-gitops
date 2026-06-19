@@ -9,8 +9,9 @@
 ## What it does
 
 Polls `*/15 * * * *` (Asia/Seoul) and publishes a high-priority (`priority: 5`) message to the ntfy
-`alerts` topic on any of the six conditions (publish is a JSON POST so Korean titles/bodies survive —
-HTTP headers are latin-1). **Critical conditions (FR27, NFR15a):**
+`alerts` topic on any of the six conditions (publish is a JSON POST so the emoji in titles/bodies
+survive — HTTP headers are latin-1). Each body is two lines: *what happened* → *what to do*.
+**Critical conditions (FR27, NFR15a):**
 
 - **(a) cert expiry** — a cert-manager `Certificate` with `.status.notAfter` ≤ 14 days out. A
   *backstop* (cert-manager auto-renews at ~2/3 life), so a hit means renewal is failing, not normal. (NFR10)
@@ -43,13 +44,13 @@ jobs+cronjobs / **applications.argoproj.io / core nodes**); no writes, no secret
 
 | Alert (ntfy title)            | What it means                          | What you do |
 |-------------------------------|----------------------------------------|-------------|
-| 🔐 인증서 만료 임박            | cert ≤14d, auto-renew likely failing   | Check cert-manager: `kubectl describe certificate <c> -n <ns>`; inspect the `Order`/`Challenge`. Usually a DNS-01 / issuer problem. |
-| 💾 스토리지 부족               | Longhorn node disk ≥80%                | Free space or add a disk: expand the node's `longhorn-sdb`, or prune old PVC snapshots/backups in the Longhorn UI. |
-| 🔴 서비스 다운                 | stateful Deploy/STS `ready < desired`  | `kubectl -n <ns> get pods` → `describe`/`logs` the not-ready pod. CrashLoop → last-good image; PVC issue → check Longhorn volume health. |
-| ❌ 백업/복원 실패              | a `*-backup`/`*-restore` Job failed    | `kubectl -n <ns> logs job/<job>`; re-run after fixing (creds/R2 reachability/disk). See that service's runbook "Backup/restore commands". |
-| 🌥️ ArgoCD 드리프트            | app `OutOfSync` or unhealthy           | **The 3-line rule:** `argocd app diff <app>` → if the live change is wrong, `git revert <the pin/config change>` + `argocd app sync <app>`; if intentional, update Git to match. Health `Degraded`/`Missing` → also `kubectl` the underlying resource. |
-| ⬆️ k3s 버전 드리프트          | node `kubeletVersion` ≠ pin            | A node was hand-upgraded. Either re-pin (open a `versions.yaml` PR to the new version if the upgrade is intended) or roll the node back to the pinned k3s. Never leave nodes silently diverged. |
-| 🔴 노드 NotReady              | a node's `Ready` ≠ True                | `kubectl describe node <n>` + check the host (Proxmox VM up? kubelet running?). Single-host SPOF — see Story 5.2 cold-boot. |
+| 🔐 Certificate expiring        | cert ≤14d, auto-renew likely failing   | Check cert-manager: `kubectl describe certificate <c> -n <ns>`; inspect the `Order`/`Challenge`. Usually a DNS-01 / issuer problem. |
+| 💾 Storage low                 | Longhorn node disk ≥80%                | Free space or add a disk: expand the node's `longhorn-sdb`, or prune old PVC snapshots/backups in the Longhorn UI. |
+| 🔴 Service down                | stateful Deploy/STS `ready < desired`  | `kubectl -n <ns> get pods` → `describe`/`logs` the not-ready pod. CrashLoop → last-good image; PVC issue → check Longhorn volume health. |
+| ❌ Backup/restore failed       | a `*-backup`/`*-restore` Job failed    | `kubectl -n <ns> logs job/<job>`; re-run after fixing (creds/R2 reachability/disk). See that service's runbook "Backup/restore commands". |
+| 🌥️ ArgoCD drift               | app `OutOfSync` or unhealthy           | **The 3-line rule:** `argocd app diff <app>` → if the live change is wrong, `git revert <the pin/config change>` + `argocd app sync <app>`; if intentional, update Git to match. Health `Degraded`/`Missing` → also `kubectl` the underlying resource. |
+| ⬆️ k3s version drift          | node `kubeletVersion` ≠ pin            | A node was hand-upgraded. Either re-pin (open a `versions.yaml` PR to the new version if the upgrade is intended) or roll the node back to the pinned k3s. Never leave nodes silently diverged. |
+| 🔴 Node NotReady              | a node's `Ready` ≠ True                | `kubectl describe node <n>` + check the host (Proxmox VM up? kubelet running?). Single-host SPOF — see Story 5.2 cold-boot. |
 
 **No state/dedupe:** a persistent condition re-fires every 15 min (intended nagging for a
 bus-factor-1 homelab). Add a sentinel ConfigMap only if it proves noisy.
