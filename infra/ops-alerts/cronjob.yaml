@@ -38,6 +38,14 @@ spec:
                   value: alerts                                 # the deny-all ntfy ops topic (Story 4.1)
                 - name: TZ
                   value: Asia/Seoul
+                # NFR15b (Story 5.1) — k3s version pin baked from versions.yaml (the cluster can't read
+                # Git). Bump here whenever versions.yaml#k3s.version bumps (keep in lockstep on upgrade).
+                - name: K3S_PINNED_VERSION
+                  value: v1.35.5+k3s1
+                # ArgoCD apps whose OutOfSync is benign steady-state (self-managed argocd = perpetual
+                # Helm/SSA self-diff). Space-separated. Health is never ignored.
+                - name: DRIFT_SYNC_IGNORE
+                  value: argocd
               envFrom:
                 - secretRef:
                     name: ops-alerts-secrets   # NTFY_TOKEN (write on the ops topic) — SealedSecret, never inline

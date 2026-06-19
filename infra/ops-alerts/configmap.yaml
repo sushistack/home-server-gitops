@@ -29,11 +29,13 @@ data:
     now=$(date -u +%s)
 
     notify() {  # $1 title, $2 body  — failure to publish is logged, never aborts the poll
+      # JSON publish (not X-Title/-d headers): HTTP headers are latin-1, so 한글/이모지 in the
+      # title/body would mojibake. jq builds the payload (safe escaping) — already a dependency.
+      payload=$(jq -nc --arg topic "$NTFY_TOPIC" --arg t "$1" --arg m "$2" \
+        '{topic:$topic, title:$t, message:$m, priority:5}')
       if curl -fsS --max-time 10 \
            -H "Authorization: Bearer ${NTFY_TOKEN}" \
-           -H "X-Priority: 5" \
-           -H "X-Title: $1" \
-           -d "$2" "${NTFY_URL}/${NTFY_TOPIC}" >/dev/null; then
+           -d "$payload" "${NTFY_URL}" >/dev/null; then
         echo "ALERT sent [$1] $2"
       else
         echo "ERROR: ntfy publish failed [$1] $2"
@@ -47,7 +49,7 @@ data:
       | select(($exp - $now) <= ($warn * 86400))
       | "\(.metadata.namespace)/\(.metadata.name)\t\(.status.notAfter)"' \
     | while IFS="$(printf '\t')" read -r cert exp; do
-        notify "cert expiry: $cert" "Certificate $cert expires $exp (within ${CERT_WARN_DAYS}d — auto-renew may be failing)"
+        notify "🔐 인증서 만료 임박: $cert" "인증서 $cert 가 $exp 에 만료됩니다 (${CERT_WARN_DAYS}일 이내 — 자동 갱신이 실패하고 있을 수 있어요)"
       done
 
     # (b) Longhorn node disk >= 80%  (usage = 1 - storageAvailable/storageMaximum)
@@ -59,7 +61,7 @@ data:
       | select($used >= $pct)
       | "\($node)\t\(.key)\t\($used | floor)"' \
     | while IFS="$(printf '\t')" read -r node disk used; do
-        notify "storage >=${DISK_PCT}%: $node" "Longhorn disk $disk on $node at ${used}% (>= ${DISK_PCT}%)"
+        notify "💾 스토리지 부족: $node" "$node 의 Longhorn 디스크 $disk 사용률 ${used}% (임계치 ${DISK_PCT}% 초과)"
       done
 
     # Stateful namespaces = those carrying a <service>-backup CronJob (the Story 4.1 backup-actor
@@ -77,7 +79,7 @@ data:
         .items[] | select((.status.readyReplicas // 0) < (.spec.replicas // 0))
         | "\(.kind)/\(.metadata.name)\t\(.status.readyReplicas // 0)\t\(.spec.replicas // 0)"' \
       | while IFS="$(printf '\t')" read -r wl ready desired; do
-          notify "service down: $ns/$wl" "$ns/$wl ready ${ready}/${desired} (stateful workload degraded)"
+          notify "🔴 서비스 다운: $ns/$wl" "$ns/$wl 준비 상태 ${ready}/${desired} (상태저장 워크로드 비정상)"
         done
     done
 
@@ -88,7 +90,52 @@ data:
       .items[] | select((.status.failed // 0) >= 1) | select(.metadata.name | test("-(backup|restore)"))
       | "\(.metadata.namespace)/\(.metadata.name)\t\(.status.failed)"' \
     | while IFS="$(printf '\t')" read -r job failed; do
-        notify "backup/restore FAILED: $job" "Backup/restore Job $job failed (status.failed=${failed})"
+        notify "❌ 백업/복원 실패: $job" "백업/복원 작업 $job 가 실패했습니다 (status.failed=${failed})"
+      done
+
+    # ---- NFR15b: version/config drift (Story 5.1) ------------------------------------------------
+
+    # (e) ArgoCD app drift — ArgoCD ALREADY computes live-vs-desired, so OutOfSync == config/version
+    #     drift and Degraded/Missing/Unknown == broken. ONE read covers every ArgoCD-managed component
+    #     (longhorn, cert-manager, sealed-secrets, all workloads). DRIFT_SYNC_IGNORE lists apps whose
+    #     OutOfSync is benign steady-state: the self-managed `argocd` app is PERPETUALLY OutOfSync on
+    #     its own CMs/Secrets (a Helm/SSA self-diff, not drift). Health is NEVER ignored — a Degraded
+    #     argocd is a real alert. "Newer upstream exists" is Renovate's PR path, NOT alerted here.
+    # ponytail: ArgoCD's OutOfSync IS the drift detector — read the CR, don't rebuild a version table.
+    DRIFT_SYNC_IGNORE="${DRIFT_SYNC_IGNORE:-argocd}"
+    kubectl get applications.argoproj.io -n argocd -o json | jq -r --arg ignore "$DRIFT_SYNC_IGNORE" '
+      ($ignore | split(" ")) as $ig
+      | .items[]
+      | (.metadata.name) as $app
+      | (.status.sync.status // "Unknown") as $sync
+      | (.status.health.status // "Unknown") as $health
+      | select(
+          (["Degraded","Missing","Unknown"] | index($health))
+          or ($sync != "Synced" and ($ig | index($app) | not))
+        )
+      | "\($app)\tsync=\($sync) health=\($health)"' \
+    | while IFS="$(printf '\t')" read -r app status; do
+        notify "🌥️ ArgoCD 드리프트: $app" "$app 가 $status — 라이브 상태가 Git 핀과 다릅니다. \`argocd app diff $app\` 확인 후 \`git revert\`(설정 변경 되돌리기) 또는 \`argocd app sync\`"
+      done
+
+    # (f) k3s node version drift + (g) node NotReady — ONE nodes read, two branches (no extra RBAC).
+    #     k3s is the one component ArgoCD does NOT manage (k3s owns Traefik + its own version), so its
+    #     pin lives in versions.yaml and is baked in as K3S_PINNED_VERSION at author time (the cluster
+    #     can't read Git). Version drift = a node hand-upgraded past the pin (no-silent-upgrade rule).
+    #     NotReady = a node down — the multi-node-on-one-host SPOF/health signal (pairs w/ Story 5.2).
+    kubectl get nodes -o json | jq -r --arg pin "$K3S_PINNED_VERSION" '
+      .items[]
+      | .metadata.name as $node
+      | (.status.nodeInfo.kubeletVersion) as $ver
+      | ([.status.conditions[] | select(.type=="Ready") | .status][0] // "Unknown") as $ready
+      | (if ($pin != "" and $ver != $pin) then "\($node)\tversion\t\($ver) (핀 \($pin))" else empty end),
+        (if $ready != "True" then "\($node)\tnotready\tReady=\($ready)" else empty end)' \
+    | while IFS="$(printf '\t')" read -r node kind detail; do
+        if [ "$kind" = "version" ]; then
+          notify "⬆️ k3s 버전 드리프트: $node" "$node kubelet 버전이 $detail 과 다릅니다 — 노드가 수동 업그레이드된 것으로 보입니다. versions.yaml 핀으로 재정렬하거나 의도된 업그레이드면 핀을 올리세요"
+        else
+          notify "🔴 노드 NotReady: $node" "$node 가 $detail 상태입니다 (노드 다운 — 단일 호스트 SPOF 신호; 호스트/노드 상태를 확인하세요)"
+        fi
       done
 
     echo "ops-alerter poll complete"

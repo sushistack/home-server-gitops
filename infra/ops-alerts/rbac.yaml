@@ -6,6 +6,8 @@
 #   jobs.batch                    -> (d) backup/restore Job failure
 #   cronjobs.batch                -> derive the "stateful namespaces" set for (c) from the
 #                                    <service>-backup convention (Story 4.1 backup actor)
+#   applications.argoproj.io      -> (e) ArgoCD drift (OutOfSync/Degraded) — NFR15b, Story 5.1
+#   nodes (core)                  -> (f) k3s version drift + (g) node NotReady — NFR15b, Story 5.1
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -22,6 +24,13 @@ rules:
     verbs: ["get", "list"]
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list"]
+  # NFR15b (Story 5.1) — same actor, read-only delta. No write verbs, no secret reads.
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["nodes"]
     verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
