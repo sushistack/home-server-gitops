@@ -1,0 +1,16 @@
+# ArgoCD UI — per-host production TLS (letsencrypt-prod, DNS-01). DNS-01 needs no public
+# reachability, so this INTERNAL-only host still gets a browser-trusted cert.
+# Secret name is argocd-ui-tls (NOT argocd-server-tls) to avoid touching argocd-server's own
+# default secret — argocd-server runs insecure, so it ignores TLS; only Traefik consumes this.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: argocd-ui-tls
+  namespace: argocd
+spec:
+  secretName: argocd-ui-tls
+  dnsNames:
+    - "${SECRET:DOMAIN_ARGOCD}"
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer

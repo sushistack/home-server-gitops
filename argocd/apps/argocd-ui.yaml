@@ -1,0 +1,28 @@
+# ArgoCD UI ingress as a dedicated Application (self-authored kustomize, like ops-alerts/cluster-issuer).
+# Source infra/argocd-ui; destination ns = argocd (same ns as argocd-server, so the IngressRoute
+# references the Service in-namespace — avoids Traefik allowCrossNamespace). The app-of-apps root
+# recurses argocd/ and adopts this. INTERNAL-only host (argocd.eli.kr): no CF tunnel rule, no public
+# DNS record, LAN-only OpenWrt override -> 10.0.0.101. Needs server.insecure (argocd-values.yaml).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-ui
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"   # after platform infra + workloads (cert-manager/ClusterIssuer must exist for the Certificate)
+spec:
+  project: homelab
+  source:
+    repoURL: https://github.com/sushistack/home-server-gitops.git
+    targetRevision: HEAD
+    path: infra/argocd-ui
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false   # argocd ns already exists
+      - ServerSideApply=true

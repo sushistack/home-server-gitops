@@ -61,6 +61,14 @@ repoServer:
         secretName: argocd-render-tokens
         optional: true   # bootstrap-injected out-of-band; a token-free cluster still starts
 
+# LAN-only UI exposure (argocd.eli.kr via Traefik): argocd-server normally serves its OWN TLS and
+# self-redirects http->https, which double-encrypts behind a TLS-terminating proxy. `server.insecure`
+# makes argocd-server serve plain HTTP on :8080 so Traefik terminates TLS once (cert-manager argocd-ui-tls)
+# and routes to svc argocd-server:80. The route itself lives in infra/argocd-ui (app argocd-ui, ns argocd).
+configs:
+  params:
+    server.insecure: true
+
 # The plugin config + the render filter, shipped as one ConfigMap mounted into the sidecar.
 extraObjects:
   - apiVersion: v1

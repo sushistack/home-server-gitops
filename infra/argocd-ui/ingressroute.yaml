@@ -1,0 +1,23 @@
+# ArgoCD UI exposed on an INTERNAL-only host (argocd.eli.kr). Backend = svc argocd-server:80
+# (plain HTTP; server.insecure=true in ansible/argocd-values.yaml). Traefik terminates TLS with
+# argocd-ui-tls. UI + API + gRPC-web all ride this one HTTP/1.1+h2c route (argocd CLI: --grpc-web).
+#
+# Internal-only = NO cloudflared tunnel rule + NO public DNS record (NXDOMAIN externally — the real
+# gate, see memory internal_only_gate) + LAN-only OpenWrt DNS override -> 10.0.0.101. NO ipAllowList
+# (cloudflared egresses from a LAN IP). traefik.io/v1alpha1 (v3); old containo.us API silently fails.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: argocd-ui
+  namespace: argocd
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`${SECRET:DOMAIN_ARGOCD}`)
+      kind: Rule
+      services:
+        - name: argocd-server
+          port: 80
+  tls:
+    secretName: argocd-ui-tls
