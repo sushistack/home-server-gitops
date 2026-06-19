@@ -81,5 +81,12 @@ post-DONE). Per AC4, optional polish must not become the reason the project neve
 
 Epic 5 (NFR15b full-ops alerting, tested cold-boot, upgrade discipline, Compose retirement) is
 **opt-in steady-state maturity, NOT a DONE blocker** — it must not become the reason the project
-never ends. **Compose is PARKED, not retired**, at DONE — retirement is Story 5.4; the dual-run
-rollback safety net stays until then.
+never ends. Compose was **PARKED, not retired**, at DONE — the dual-run rollback safety net stayed
+until k3s earned trust.
+
+**Update 2026-06-19 — Compose RETIRED (Story 5.4).** k3s trust was certified by the operator and the
+legacy Compose application stack was decommissioned: app service defs removed from
+`docker-compose.yml`, pruned from the CD path, secret `.env` origin deleted, SealedSecrets promoted
+to single source (AR24 collapsed), and the "roll back to Compose" doctrine struck from the runbooks.
+**k3s is now the sole production path.** Plane 0 (OpenWrt/Proxmox/cloudflared) and the infra Compose
+stack are untouched (infra retirement = Story 5.5). See [DECISIONS.md](DECISIONS.md).

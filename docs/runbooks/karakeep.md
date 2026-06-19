@@ -74,7 +74,8 @@ kubectl -n argocd get applications.argoproj.io karakeep \
    predictable failure under default-deny.
 6. **Public host 5xx but pods Healthy?** Edge, not k3s — check the cloudflared route for
    `${SECRET:DOMAIN_KEEP}` (NPM↔Traefik) and `kubectl -n karakeep get certificate karakeep-tls` →
-   Ready. Rollback = flip the tunnel route back to NPM (Compose).
+   Ready. k3s is the sole production path (Compose retired 2026-06-19); recover via R2 restore /
+   `git revert` + ArgoCD sync, not a flip-back to NPM.
 
 ## Common failures
 
@@ -156,8 +157,10 @@ kubectl -n karakeep scale deploy/karakeep-web --replicas=1
   fetch + R2 backup), and **`anytype-heart` in ns `anytype`** (Story 4.4, on k3s) for the bridge —
   Reconciliation 1. The bridge is OPTIONAL for the core bookmarks-served-and-isolated ACs; don't
   block the whole service on it.
-- **Cutover/rollback:** [stateful-cutover.md](stateful-cutover.md) — SQLite data class (`.backup`
-  dump → file restore, NOT rsync of a live WAL). Compose karakeep (all 5 containers) stays **PARKED**
-  (rollback = flip the `${SECRET:DOMAIN_KEEP}` tunnel route back to NPM; Compose never torn down).
+- **Cutover (historical):** [stateful-cutover.md](stateful-cutover.md) — SQLite data class (`.backup`
+  dump → file restore, NOT rsync of a live WAL). **Compose karakeep (all 5 containers) RETIRED
+  2026-06-19 (Story 5.4)** — k3s is the sole production path; no Compose rollback. Recovery is
+  k3s-native: restore from R2 (`homelab-k3s-services-backup/karakeep/`) into a scratch ns, or
+  `git revert` + ArgoCD sync. See [DECISIONS.md](../DECISIONS.md).
 - **Alerting:** backup-failure surfaces via the ntfy poller (Story 4.2, ops-alerts, watches for
   Failed Jobs cluster-wide); `activeDeadlineSeconds` makes a hung backup a visible Failed Job.

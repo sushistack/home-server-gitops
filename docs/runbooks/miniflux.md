@@ -50,7 +50,8 @@ kubectl -n argocd get applications.argoproj.io miniflux \
    creates it). If the secret is missing, the SealedSecret failed to decrypt — see Common failures.
 4. **Public host 5xx but pods Healthy?** The issue is the edge, not k3s — check the cloudflared
    tunnel route for `${SECRET:DOMAIN_RSS}` (NPM↔Traefik) and the `miniflux-tls` cert (`kubectl -n miniflux get
-   certificate miniflux-tls` → Ready). Rollback = flip the tunnel route back to NPM (Compose).
+   certificate miniflux-tls` → Ready). k3s is the sole production path (Compose retired 2026-06-19);
+   recover via R2 restore / `git revert` + ArgoCD sync, not a flip-back to NPM.
 5. **Feeds not refreshing but app up?** Almost always egress — see Common failures #1.
 
 ## Common failures
@@ -116,8 +117,10 @@ pg_restore --clean --if-exists --no-owner \
 - **Depends on:** Longhorn (PVC `miniflux-db-data`), cert-manager + `letsencrypt-prod` (the
   `miniflux-tls` cert), the SealedSecrets controller (decrypts both secrets), the cloudflared tunnel
   (public route for `${SECRET:DOMAIN_RSS}`), and **outbound internet egress** (feed fetch).
-- **Cutover/rollback:** [stateful-cutover.md](stateful-cutover.md) — Postgres is the `pg_dump`/`pg_restore`
-  data class (dump→restore, NOT rsync). Compose miniflux + miniflux-db stay **PARKED** (rollback =
-  flip the `${SECRET:DOMAIN_RSS}` tunnel route back to NPM; Compose never torn down).
+- **Cutover (historical):** [stateful-cutover.md](stateful-cutover.md) — Postgres is the `pg_dump`/`pg_restore`
+  data class (dump→restore, NOT rsync). **Compose miniflux + miniflux-db RETIRED 2026-06-19 (Story 5.4)**
+  — k3s is the sole production path; no Compose rollback. Recovery is k3s-native: restore from R2
+  (`homelab-k3s-services-backup/miniflux/`) into a scratch ns, or `git revert` + ArgoCD sync. See
+  [DECISIONS.md](../DECISIONS.md).
 - **Alerting:** until full alerting lands (Epic 4.2/5.1), watch the cutover manually — there is no
   automated page on miniflux failure yet.

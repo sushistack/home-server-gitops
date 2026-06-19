@@ -33,8 +33,8 @@ In-cluster / ArgoCD: `kubectl get pods -n ntfy` → pod `Running`/`Ready`;
 4. **Config** — `kubectl exec -n ntfy deploy/ntfy -- cat /etc/ntfy/server.yml`; if the host/base-url
    is wrong, the render token (`DOMAIN_NTFY`) was not substituted.
 5. **Public route** — confirm the `${SECRET:DOMAIN_NTFY}` cloudflared route points at Traefik
-   (`https://<node>:443`, `originServerName=${SECRET:DOMAIN_NTFY}`). To roll back: flip it to NPM
-   (Compose ntfy is still parked + serving its own SQLite) — see stateful-cutover.md.
+   (`https://<node>:443`, `originServerName=${SECRET:DOMAIN_NTFY}`). k3s is the sole production path
+   (Compose retired 2026-06-19) — recover via R2 restore / `git revert` + ArgoCD sync, not a flip-back.
 6. **Egress** — if a NetworkPolicy baseline ever lands, confirm ns `ntfy` is allowed DNS :53 +
    egress to `ntfy.sh`; without it background push silently dies while the pod stays `Healthy`.
 7. **Restart / revert** — `kubectl rollout restart deploy/ntfy -n ntfy`; the real fix for bad config
@@ -98,5 +98,6 @@ kubectl exec -n ntfy deploy/ntfy -- sqlite3 /var/cache/ntfy/auth.db "select coun
   transparent to them.
 - **Depends on:** Longhorn (PVC), Traefik + cert-manager (`ntfy-tls`, `letsencrypt-prod`),
   the `DOMAIN_NTFY` render token, the `ntfy-backup-r2` SealedSecret.
-- **Compose ntfy is PARKED, not decommissioned** (the rollback) until the operator retires it
-  deliberately. See [stateful-cutover.md](stateful-cutover.md).
+- **Compose ntfy RETIRED 2026-06-19 (Story 5.4)** — k3s is the sole production path; there is no
+  Compose rollback. Recovery is k3s-native: restore from R2 (`homelab-k3s-services-backup/ntfy/`)
+  into a scratch namespace, or `git revert` + ArgoCD sync. See [DECISIONS.md](../DECISIONS.md).

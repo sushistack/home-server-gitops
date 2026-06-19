@@ -13,8 +13,9 @@ metadata DB (`/downloads/.ydl-metadata.db`) + the yt-dlp archive. No UI auth, no
 
 **On k3s today this is a golden-path *deployment* proof, not a functional cutover:** `/downloads`
 is an `emptyDir` scratch volume (it owns no data — the real music library is navidrome's Longhorn
-volume, wired at navidrome's Epic 4 cutover, Story 4.3). n8n (the caller) is still on Compose, so
-the live functional path runs on **Compose ytdlp-api**, which is PARKED not decommissioned.
+volume, wired at navidrome's Epic 4 cutover, Story 4.3). n8n (the caller) is now on k3s too (Story
+4.7), so the whole n8n → ytdlp → navidrome chain runs on **k3s**. Compose ytdlp-api was **retired
+2026-06-19 (Story 5.4)**.
 
 ## Health check (exact command → expected output)
 
@@ -66,10 +67,10 @@ up/restored there (Story 4.3). `/downloads` here is `emptyDir` scratch — nothi
 
 ## Escalation / depends-on
 
-- **Consumed by n8n** (the only caller; triggers `ytsearch1:` downloads). n8n is CRITICAL and
-  stays on **Compose until Epic 4** — do not re-point it at the k3s Service yet.
-- **Writes into navidrome's music volume.** navidrome migrates in **Epic 4 (Story 4.3)**; that is
-  where ytdlp-api's real `/downloads` target (a Longhorn volume) is wired. Until then the live
-  functional chain (n8n → ytdlp → navidrome) runs entirely on Compose.
-- **Compose ytdlp-api is PARKED, not decommissioned** (see `docs/DECISIONS.md`). Functional
-  decommission rides along with the navidrome cutover.
+- **Consumed by n8n** (the only caller; triggers `ytsearch1:` downloads). n8n is on k3s (Story 4.7)
+  and calls ytdlp-api via its in-cluster Service.
+- **Writes into navidrome's music volume** (navidrome on k3s, Story 4.3) — the n8n → ytdlp →
+  navidrome chain runs entirely on **k3s**.
+- **Compose ytdlp-api RETIRED 2026-06-19 (Story 5.4)** — k3s is the sole production path; no Compose
+  rollback. Recover via `git revert` + ArgoCD sync (ytdlp-api is stateless — `/downloads` is scratch).
+  See [DECISIONS.md](../DECISIONS.md).

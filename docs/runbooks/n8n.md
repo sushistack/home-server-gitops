@@ -46,8 +46,8 @@ In-cluster / ArgoCD: `kubectl get pods -n n8n` → pod `Running`/`Ready`;
    → `set`. If empty, the `n8n-secrets` SealedSecret didn't unseal (controller down / wrong ns) — fix
    that BEFORE the pod boots and auto-generates a fresh key into `config`.
 5. **Public route** — confirm the `${SECRET:DOMAIN_N8N}` cloudflared route points at Traefik
-   (`https://<node>:443`, `originServerName=${SECRET:DOMAIN_N8N}`). To roll back: flip it to NPM
-   (Compose n8n is parked + still holds its own SQLite) — see stateful-cutover.md.
+   (`https://<node>:443`, `originServerName=${SECRET:DOMAIN_N8N}`). k3s is the sole production path
+   (Compose retired 2026-06-19); recover via R2 restore / `git revert` + ArgoCD sync, not a flip-back.
 6. **Webhooks dead but pod Healthy** — `WEBHOOK_URL`/`N8N_BASE_URL` wrong in `n8n-config`: every
    webhook node builds its callback from these; a wrong host silently breaks inbound triggers.
 7. **Restart / revert** — `kubectl rollout restart deploy/n8n -n n8n`; the real fix for bad config is
@@ -126,12 +126,11 @@ kubectl exec -n n8n deploy/n8n -- sqlite3 /home/node/.n8n/database.sqlite \
 - **Depends on:** Longhorn (`n8n-data` PVC), Traefik + cert-manager (`n8n-tls`, `letsencrypt-prod`),
   the `DOMAIN_N8N` render token, the `n8n-secrets` (encryption key) and `n8n-backup-r2` SealedSecrets,
   and the SealedSecrets controller (ns `sealed-secrets`).
-- **Dual-run secret rotation (AC2):** while Compose is parked, `n8n-secrets` is the **verified copy**
-  of the key whose origin is Compose `data/n8n/config` (the AR24 documented exception — n8n's secret
-  origin is the config file, not `.env`). Once Compose is retired (Epic 5) the SealedSecret is the
-  **sole** source. To rotate, re-seal from the live value — command in the header of
-  `workloads/n8n/sealedsecret.yaml`.
-- **Compose n8n is PARKED, not decommissioned** (the rollback) until the operator retires it
-  deliberately in Epic 5 (`docker compose stop n8n n8n-backup`, never `down`). See
-  [stateful-cutover.md](stateful-cutover.md). The CD deploy path no longer depends on n8n (moved to a
-  self-hosted runner), but n8n still runs the household automation workflows.
+- **Secret source (AR24, collapsed 2026-06-19):** `n8n-secrets` is now the **sole source of truth**
+  for the encryption key — the Compose origin (`data/n8n/config`) was retired with the stack (Story
+  5.4), so the dual-run "verified copy" window is closed. To rotate, re-seal from the in-cluster live
+  value — command in the header of `workloads/n8n/sealedsecret.yaml`.
+- **Compose n8n RETIRED 2026-06-19 (Story 5.4)** — k3s is the sole production path; there is no
+  Compose rollback. Recovery is k3s-native: restore from R2 (`homelab-k3s-services-backup/n8n/`) into
+  a scratch ns, or `git revert` + ArgoCD sync. See [DECISIONS.md](../DECISIONS.md). n8n still runs the
+  household automation workflows — now solely on k3s.

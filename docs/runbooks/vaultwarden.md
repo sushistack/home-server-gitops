@@ -39,10 +39,11 @@ In-cluster / ArgoCD: `kubectl get pods -n vaultwarden` → pod `Running`/`Ready`
 3. **Logs** — `kubectl logs -n vaultwarden deploy/vaultwarden --tail=100` (DB lock / WAL / cert errors).
 4. **SealedSecret materialized** — `kubectl get secret vaultwarden-secrets -n vaultwarden`; if absent,
    the SealedSecret didn't unseal (controller down / sealed to wrong cluster-or-ns) → the pod has no
-   `ADMIN_TOKEN` and won't start. Re-seal per AC2 (origin = Compose `.env` during overlap).
+   `ADMIN_TOKEN` and won't start. Re-seal from the in-cluster live value — the SealedSecret is now the
+   **sole source** (AR24; Compose `.env` origin retired 2026-06-19, Story 5.4).
 5. **Public route** — confirm the `${SECRET:DOMAIN_VAULTWARDEN}` cloudflared route points at Traefik
-   (`https://<node>:443`, `originServerName=${SECRET:DOMAIN_VAULTWARDEN}`). **To roll back: flip it to
-   NPM** (Compose vaultwarden is PARKED + still serving its own SQLite) — see stateful-cutover.md.
+   (`https://<node>:443`, `originServerName=${SECRET:DOMAIN_VAULTWARDEN}`). k3s is the sole production
+   path (Compose retired 2026-06-19); recover via R2 restore / `git revert` + ArgoCD sync, no flip-back.
 6. **Restart / revert** — `kubectl rollout restart deploy/vaultwarden -n vaultwarden`; the real fix
    for bad config is `git revert` (GitOps; ArgoCD selfHeal re-converges manual drift).
 
@@ -114,8 +115,10 @@ Then scale back to 1 and re-enable autosync.
   mirror to Bitwarden Cloud exists (`spec-vaultwarden-bitwarden-cloud-sync.md`, GH Actions Sunday
   01:00 UTC). If `vault.<zone>` is down, a client can switch its server URL to `vault.bitwarden.com`
   (separate master password) for read access. It is **≤7 days stale** — the R2 dumps (≤6h) are the
-  authoritative backup. The sync runs against the live source; **leave it targeting whichever side
-  is authoritative during the Compose/k3s overlap** (default: as-is until Compose is retired in 5.4).
-- **Compose vaultwarden is PARKED, not decommissioned** (the rollback) until the operator retires it
-  deliberately in Epic 5 / Story 5.4 (`docker compose stop vaultwarden vaultwarden-backup`, never
-  `down`). See [stateful-cutover.md](stateful-cutover.md).
+  authoritative backup. The sync runs against `vault.<zone>`, which now resolves to **k3s** (Compose
+  retired 2026-06-19) — the GH Actions workflow (`vaultwarden-cloud-sync.yml`) is endpoint-agnostic;
+  confirm its `VW_API_URL` secret is the **domain** (`https://vault.<zone>`), not the old Compose IP.
+- **Compose vaultwarden RETIRED 2026-06-19 (Story 5.4)** — k3s is the sole production path; there is no
+  Compose rollback. Recovery is k3s-native: restore from R2 (`homelab-k3s-services-backup/vaultwarden/`,
+  incl. `rsa_key.pem` + attachments) into a scratch ns, or `git revert` + ArgoCD sync. See
+  [DECISIONS.md](../DECISIONS.md).

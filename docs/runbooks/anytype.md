@@ -52,10 +52,10 @@ kubectl logs -n anytype deploy/anytype --tail=200 | grep -iE 'peerId|networkId'
    `kubectl -n kube-system get helmchartconfig traefik -o yaml | grep -A2 anytype`;
    `kubectl -n kube-system get svc traefik -o yaml | grep -E '33010|33020'` (ports published at the edge);
    `kubectl -n anytype get ingressroutetcp,ingressrouteudp`.
-4. **Public edge forward** — confirm the **33010/TCP + 33020/UDP stream forward** (NPM Stream /
-   port-forward — NOT the cloudflared HTTP tunnel) points at the Traefik entryPoints. To roll back:
-   flip that forward back to the Compose host (Compose anytype is parked + serving) — see
-   stateful-cutover.md.
+4. **Public edge forward** — confirm the **33010/TCP + 33020/UDP stream forward** (OpenWrt WAN DNAT +
+   LAN dnsmasq override → Traefik entryPoints on `${SECRET:IP_K3S}` — NOT the cloudflared HTTP tunnel).
+   k3s is the sole production path (Compose retired 2026-06-19); recover via R2 restore / `git revert`
+   + ArgoCD sync, not a flip-back to the Compose host. See [DECISIONS.md](../DECISIONS.md).
 5. **BadgerDB lock** — if a pod crash-loops on a lock, ensure only one pod holds `/data`
    (`strategy: Recreate` guarantees this; a stuck Terminating pod can still hold it —
    `kubectl delete pod -n anytype <pod> --grace-period=30`).
@@ -131,5 +131,7 @@ kubectl logs -n anytype deploy/anytype --tail=200 | grep -iE 'peerId|networkId' 
   the `ghcr-sushistack` imagePullSecret, and the public 33010/33020 stream forward.
 - **⚠️ No ntfy alert on backup failure until Story 4.2 lands** — a torn/failed scale-to-0 backup is
   not yet alerted (NFR15a). Watch the CronJobs manually until 4.2.
-- **Compose anytype/anytype-heart are PARKED, not decommissioned** (the rollback) until the operator
-  retires them deliberately (Story 5.4). See [stateful-cutover.md](stateful-cutover.md).
+- **Compose anytype/anytype-heart RETIRED 2026-06-19 (Story 5.4)** — k3s is the sole production path;
+  there is no Compose rollback. Recovery is k3s-native: restore from R2
+  (`homelab-k3s-services-backup/anytype/` + `…/anytype-heart/`) into a scratch ns, or `git revert` +
+  ArgoCD sync. See [DECISIONS.md](../DECISIONS.md).

@@ -1,13 +1,23 @@
 # Runbook: the stateful cutover machine
 
+> 🏁 **HISTORICAL (Compose retired 2026-06-19, Story 5.4).** All Epic 4 cutovers are complete and
+> **k3s is the sole production path.** The "Compose is the rollback" invariant below **no longer
+> applies** — the Compose stack has been decommissioned, so there is nothing to flip back to.
+> Present-day recovery is **k3s-native**: restore the per-service R2 dump
+> (`homelab-k3s-services-backup/<service>/`) into a scratch namespace, or `git revert` the bad
+> manifest commit and let ArgoCD re-sync. This doc is kept as the **record of how the migration was
+> done** (the quiesce → verify → flip machine), not as a live rollback procedure. See
+> [DECISIONS.md](../DECISIONS.md).
+
 > The **reusable** quiesce → copy → verify → flip → rollback procedure for moving a
 > stateful Compose service to k3s with **zero data loss**. Authored in Story 4.1; ntfy
 > is its first worked instance (inline below). Stories 4.3–4.8 **copy this doc**, not
 > reinvent steps. Service-parameterized on `<service>` / `<host>` / `<db-paths>` / `<ns>`.
 
-**Invariant that makes rollback free:** Compose is **never stopped** during the cutover.
-The live Compose service keeps serving its own volume the whole time; the only switch is the
-per-host cloudflared route. "Ingress is the switch; Compose is the rollback." (FR4, NFR2)
+**Invariant that made rollback free (cutover era — Compose now retired):** Compose was **never
+stopped** during a cutover. The live Compose service kept serving its own volume the whole time; the
+only switch was the per-host cloudflared route. "Ingress is the switch; Compose is the rollback."
+held *during the migration* — it no longer does (Compose retired 2026-06-19). (FR4, NFR2)
 
 **Hard entry gates (both must be `done` before ANY stateful cutover):** Epic 2 fully done
 (multi-node, Longhorn, Sealed Secrets, **prod DNS-01 TLS**, **Gate 0**) **and** the Epic 3
@@ -87,19 +97,25 @@ Confirm 200 from the public host and that downstream callers still work.
 
 ---
 
-## Rollback (proven, not assumed — REQUIRED to record per cutover)
+## Rollback — HISTORICAL (Compose retired 2026-06-19)
 
-Compose was never stopped, so **there is nothing to restore**. To roll back:
+> During the Epic 4 cutovers, rollback was free because **Compose was never stopped**: flip the
+> `<host>` cloudflared route back to NPM and resolvers returned to the still-serving Compose volume.
+> That path **no longer exists** — Compose is decommissioned (Story 5.4). The text below is the
+> historical record of the cutover-era rollback.
+>
+> **Present-day recovery (k3s is the sole production path):** there is no flip-back. Recover with
+> k3s-native means — restore the per-service R2 dump (`homelab-k3s-services-backup/<service>/`) into a
+> scratch namespace and verify, or `git revert` the offending manifest commit and let ArgoCD re-sync.
+
+Compose was never stopped, so **there was nothing to restore**. To roll back (cutover era):
 
 1. Flip the `<host>` cloudflared route **back to NPM** (Compose).
 2. Within the pre-lowered TTL window, resolvers return to Compose; it is still serving its own
    live volume. Zero data reconstruction.
 
 **Max rollback latency** = the cloudflared tunnel-config push propagation (seconds) for the house
-tunnel flip, or the pre-lowered DNS TTL from Step 1 if `<host>` uses a real DNS record. Record the
-mechanism and the observed rollback latency. Either **exercise** the rollback or **dry-run rehearse**
-it (flip back, confirm 200 from Compose, flip forward again) and write the result in the service
-runbook. (AC2, FR4, NFR2)
+tunnel flip, or the pre-lowered DNS TTL from Step 1 if `<host>` uses a real DNS record. (AC2, FR4, NFR2)
 
 ---
 
@@ -177,7 +193,8 @@ switch to a shared wildcard + reflector only if issuance volume ever bites.`
   assertion is **only** about `auth.db` (users/tokens/ACLs). cache.db divergence in-window is benign.
 - **Backup actor:** `workloads/ntfy/backup-cronjob.yaml` (`ntfy-backup`, ≤6h) replaces the Compose
   `offen/docker-volume-backup` sidecar → `r2:homelab-k3s-services-backup/ntfy/`.
-- **Rollback:** flip `<host>` cloudflared back to NPM; Compose ntfy still serves its SQLite.
+- **Rollback (cutover era — no longer available):** flip `<host>` cloudflared back to NPM; Compose
+  ntfy still served its SQLite. Compose retired 2026-06-19 → recovery is now R2 restore / `git revert`.
 
 > **Chicken-and-egg:** ntfy is the alert channel for Story 4.2. Until 4.2 lands, there is **no
 > alert on ntfy's own failure** — watch the cutover manually. (epics.md Story 4.2)

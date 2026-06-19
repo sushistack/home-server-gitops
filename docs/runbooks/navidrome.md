@@ -36,8 +36,8 @@ In-cluster / ArgoCD: `kubectl get pods -n navidrome` → pod `Running`/`Ready`;
 4. **Config** — `kubectl exec -n navidrome deploy/navidrome -- env | grep ^ND_`; if `ND_LASTFM_APIKEY`
    is empty the `navidrome-lastfm` SealedSecret didn't unseal (controller / wrong ns).
 5. **Public route** — confirm the `${SECRET:DOMAIN_NAVIDROME}` cloudflared route points at Traefik
-   (`https://<node>:443`, `originServerName=${SECRET:DOMAIN_NAVIDROME}`). To roll back: flip it to NPM
-   (Compose navidrome is parked + still serving its own SQLite) — see stateful-cutover.md.
+   (`https://<node>:443`, `originServerName=${SECRET:DOMAIN_NAVIDROME}`). k3s is the sole production
+   path (Compose retired 2026-06-19) — recover via R2 restore / `git revert` + ArgoCD sync, no flip-back.
 6. **Egress** — if a NetworkPolicy baseline ever lands, confirm ns `navidrome` is allowed DNS :53
    (Last.fm scrobble + cert-manager). Without it scrobbling silently fails while the pod is `Healthy`.
 7. **Restart / revert** — `kubectl rollout restart deploy/navidrome -n navidrome`; the real fix for
@@ -108,6 +108,7 @@ kubectl exec -n navidrome deploy/navidrome -- sqlite3 /data/navidrome.db "select
 - **Companions (NOT migrated by this story):** `ytdlp-api` + the n8n Last.fm discovery workflow stay
   on Compose; they feed the music library and have no durable state of their own. Navidrome serves
   fine without them — only new-music discovery pauses until they migrate.
-- **Compose navidrome is PARKED, not decommissioned** (the rollback) until the operator retires it
-  deliberately in Epic 5 (`docker compose stop navidrome navidrome-backup`, never `down`). See
-  [stateful-cutover.md](stateful-cutover.md).
+- **Compose navidrome RETIRED 2026-06-19 (Story 5.4)** — k3s is the sole production path; there is no
+  Compose rollback. Recovery is k3s-native: restore from R2 (`homelab-k3s-services-backup/navidrome/`)
+  into a scratch namespace, or `git revert` + ArgoCD sync. The music library lives on Longhorn (not
+  R2). See [DECISIONS.md](../DECISIONS.md).

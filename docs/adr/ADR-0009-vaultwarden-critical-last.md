@@ -43,7 +43,9 @@ highest-criticality data:
   Unlike n8n — whose encryption key lives in a `data/n8n/config` file — vaultwarden's
   only app secret is a normal `.env` var, so the "origin = Compose `.env` during
   overlap; the SealedSecret is a verified copy until Compose retires (Story 5.4)"
-  rule applies cleanly. Consumed `envFrom: secretRef` only (AR22).
+  rule applied cleanly. Consumed `envFrom: secretRef` only (AR22).
+  **Update 2026-06-19:** Compose retired (Story 5.4); the dual-run window is closed —
+  the `vaultwarden-secrets` SealedSecret is now the **sole source** (see DECISIONS.md).
 - **Bitwarden-Cloud is an availability fallback, NOT a backup.** A one-way weekly
   mirror to Bitwarden Cloud lets a client switch its server URL for read access if
   `vault.<zone>` is down. It is ≤7 days stale; the R2 dumps (≤6h) remain the

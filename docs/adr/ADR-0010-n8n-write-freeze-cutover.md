@@ -39,6 +39,8 @@ dir into a Longhorn PVC via a one-shot ingest Job) applies — unlike miniflux's
   does not hold for n8n). Setting it via the SealedSecret (env wins over the file, and is
   deterministic) makes the key survive a fresh PVC / a lost `config` / an rsync miss. **A credential
   that decrypts in the UI on k3s — before the ingress flip — is the proof the key migrated.**
+  **Update 2026-06-19:** Compose retired (Story 5.4); the Compose `config`-file origin is gone — the
+  `n8n-secrets` SealedSecret is now the **sole source** for the key (see DECISIONS.md).
 - **Parallel run / reversible rollback.** Compose n8n + n8n-backup stay **PARKED** (stopped, never
   `down`); rollback is the cloudflared route for `${SECRET:DOMAIN_N8N}` flipped back to NPM within the
   pre-lowered TTL. The flip never tears Compose down — same machine as every Epic 4 cutover.

@@ -2,6 +2,34 @@
 
 Running log of load-bearing decisions. One line each; link the story.
 
+## Compose stack RETIRED — k3s is the sole production path (Story 5.4, Epic 5 / Phase 3)
+
+- 2026-06-19 | **The legacy Compose application stack was retired (decommissioned, not merely
+  parked).** All 9 migrated app services + their `offen` backup sidecars + Compose-only scaffolding
+  (`karakeep-anytype-bridge-data-fix` init, `karakeep-internal` bridge) were removed from
+  `home.server` `configs/docker/docker-compose.yml`, from the CD path (`.github/workflows/deploy.yml`
+  + `.github/scripts/deploy.js` no longer materialize their `.env*` or `docker compose up` the app
+  stack), and the app/backup `.env` templates (`.env.apps.template`, `.env.backup.template`) were
+  deleted so the Compose `.env` secret origin **ceases to exist**. The live containers on
+  `${SECRET:IP_COMPOSE}` were brought down by the operator (`docker compose down`). | Story 5.4
+- 2026-06-19 | **Preconditions met (HARD GATE).** Project **DONE** declared 2026-06-19 (Story 4.8 —
+  all migrated services live on k3s, ArgoCD `Synced`/`Healthy`, Gate 0 + per-service verified
+  restores, NFR15a alerting proven; see [DONE.md](DONE.md)). **k3s trust** certified by the operator
+  as the explicit Story 5.4 judgment gate (operator decision 2026-06-19). Retiring Compose **removes
+  the documented rollback path** — this is the point of no easy return, taken deliberately.
+- 2026-06-19 | **AR24 dual-run source-of-truth collapsed.** The SealedSecrets are now the **single
+  source of truth** (no longer "a verified copy of the Compose `.env`"). The SealedSecrets themselves
+  did not change — only their documented authority. Runbooks + ADR-0009/0010 AR24 notes flipped. | AR24
+- 2026-06-19 | **Rollback doctrine struck.** "Ingress is the switch; Compose is the rollback" no
+  longer holds — `stateful-cutover.md` is marked HISTORICAL, every per-service runbook's "roll back
+  to NPM/Compose" step is replaced with k3s-native recovery (restore the per-service R2 dump
+  `homelab-k3s-services-backup/<svc>/` into a scratch namespace, or `git revert` + ArgoCD sync). | NFR12
+- 2026-06-19 | **Plane 0 untouched.** OpenWrt, Proxmox, Oracle, and the cloudflared tunnel were not
+  modified; the CD self-hosted runner on `${SECRET:IP_COMPOSE}` survives. The infra Compose stack
+  (`docker-compose.infra.yml`: portainer/NPM/homepage/uptime-kuma/cloudflared) **stays live** — those
+  platform services are out of scope here (their retirement is Story 5.5). This closes the Epic 5 /
+  Phase 3 dual-run window; remaining Epic 5 stories stay optional. | Story 5.4
+
 ## GitOps upgrade & rollback discipline (Story 5.3, Epic 5 / Phase 3)
 
 - 2026-06-19 | **Version SSOT completed + made enforceable.** All pins now answerable from one
