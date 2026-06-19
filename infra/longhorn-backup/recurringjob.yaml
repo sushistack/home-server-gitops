@@ -1,0 +1,18 @@
+# Daily offsite backup of all active Longhorn volumes (Story 5.10).
+# groups:[default] = every volume that has no other recurring-job label (so it covers the DB
+# volumes + the dump-less services; navidrome-music keeps only its own local snapshot job, by
+# design — music is re-acquirable and deliberately not shipped offsite). DETACHED volumes are
+# skipped (allowRecurringJobWhileVolumeDetached stays false) so the parked/orphan PVCs in the
+# `default` namespace aren't backed up. Backups are incremental after the first full -> tiny on R2.
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: offsite-daily
+  namespace: longhorn-system
+spec:
+  task: backup
+  cron: "0 3 * * *"     # daily 03:00 KST, off-peak
+  retain: 7             # keep 7 daily backups per volume
+  concurrency: 2
+  groups:
+    - default

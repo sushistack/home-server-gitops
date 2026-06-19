@@ -1,0 +1,36 @@
+# Story 5.10 — Longhorn offsite backup config (BackupTarget + credential + daily RecurringJob).
+# Separate from the longhorn Helm app (which is a vendor chart source) so these self-authored CRs
+# live in infra/longhorn-backup. Wave 1: after sealed-secrets controller (wave 0) so the credential
+# unseals, and after longhorn (wave 0) so the CRDs exist.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: longhorn-backup
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: homelab
+  source:
+    repoURL: https://github.com/sushistack/home-server-gitops.git
+    targetRevision: HEAD
+    path: infra/longhorn-backup
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: longhorn-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true   # adopt + patch the longhorn-managed `default` BackupTarget
+  # longhorn-manager continuously writes these spec fields on the BackupTarget; let it own them so
+  # selfHeal doesn't fight the controller's poll/sync bookkeeping.
+  ignoreDifferences:
+    - group: longhorn.io
+      kind: BackupTarget
+      name: default
+      namespace: longhorn-system
+      jsonPointers:
+        - /spec/syncRequestedAt
+        - /spec/pollInterval
