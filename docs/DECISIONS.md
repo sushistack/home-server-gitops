@@ -660,3 +660,21 @@ material, IP, or `*.<zone>` host appears; Plane 0 secrets stay off-repo.
   tiles and walking away would quietly break that, so the **runbook tile-list (or an exported JSON) is the
   deliverable** and the clicking just applies it. No tile-as-code automation (YAGNI for one operator). |
   Story 5.8 (AC4)
+- 2026-06-20 | **cloudflared (Plane 0) moved INTO k3s; the standalone docker LXC (10.0.0.20) is
+  retired.** cloudflared was the last service on the docker LXC after 5.8. Relocated as a 2-replica
+  infra Deployment (`infra/cloudflared`, soft anti-affinity, `/ready` probe, `maxUnavailable:0`) on
+  the SAME tunnel/token (sealed) — Cloudflare load-balances all connections so the .20↔k3s overlap was
+  zero-downtime; verified the edge serves from k3s alone before stopping .20. Then the `homelab-docker`
+  self-hosted runner was stopped, the home.server infra CD disabled (`deploy.yml` push-trigger removed +
+  `if:false`), and **LXC 202 destroyed**. Accepted circular-dependency (edge inside the cluster it fronts):
+  post-5.8 every public host already routes through Traefik in k3s, so a k3s outage takes services down
+  regardless; proxmox/openwrt/kvm recovery during an outage is the LAN IP (5.8 AC6e). This partially
+  supersedes Story 5.9's cloudflared-CD migration (no Compose CD left to move); 5.9's OpenWrt/Oracle/
+  Proxmox→private-repo + Ansible refactor still stands. | Story 5.10 (AC2/3/4)
+- 2026-06-20 | **k3s nodes grown to 16 GB RAM + a single 200 GB Longhorn disk each.** The "Longhorn
+  dying" symptom was RAM pressure under the 5.8 churn (nodes were 8 GB) + the 600 s replica-replenishment
+  wait leaving volumes "degraded" after blips — not disk capacity (sdb was 5% used). Rolling reboots to
+  16 GB; the existing 100 GB Longhorn disk (`sdb`) grown online to 200 GB (`resize2fs`, raw ext4). Left
+  `replica-replenishment-wait-interval` at 600 s (lowering it causes more full rebuilds on routine
+  reboots); after each maintenance reboot, delete genuinely-failed replicas to force immediate rebuild.
+  `default-disk` on the 31 GB root stays unschedulable (correct — keeps Longhorn off the OS disk). | Story 5.10 (AC1)
