@@ -62,7 +62,7 @@ spec:
             - name: config
               mountPath: /config        # database.sqlite + tasks.sqlite (Longhorn)
             - name: manga
-              mountPath: /data          # the 90G node-local library — READ-ONLY (komga only reads)
+              mountPath: /mnt/manga     # MUST match the LXC path the migrated DB references (library root = /mnt/manga/mangas); READ-ONLY
               readOnly: true
       volumes:
         - name: config

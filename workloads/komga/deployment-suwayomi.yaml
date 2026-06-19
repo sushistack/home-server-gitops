@@ -3,12 +3,10 @@
 # Reconciliation 5: komga + suwayomi are two Deployments in one namespace sharing one library (the
 # karakeep multi-component-in-one-workload shape).
 #
-# 🔴 LIBRARY PATH (operator, during data migration): the upstream image runs as uid 1000 and stores
-# its data dir at /home/suwayomi/.local/share/Tachidesk. Downloads default to <data>/downloads — which
-# would land on Longhorn, NOT the shared NFS. So the migrated `server.conf` MUST set
-# `server.downloadsPath = /manga` (the NFS mount below) so suwayomi writes where komga reads. komga's
-# /data (ro) and suwayomi's /manga (rw) are the SAME export (10.0.0.30:/mnt/manga). Verify a suwayomi
-# download appears in komga at parity (Task 7).
+# 🔴 LIBRARY PATH: the upstream image runs as uid 1000, data dir /home/suwayomi/.local/share/Tachidesk.
+# The manga library (node-local PV) is mounted at /mnt/manga in BOTH komga (ro) and suwayomi (rw) — the
+# SAME path the LXC used, so the migrated komga DB (library root /mnt/manga/mangas) and suwayomi H2 DB
+# (existing download paths) resolve without rewriting. server.conf `server.downloadsPath = /mnt/manga`.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -89,7 +87,7 @@ spec:
             - name: config
               mountPath: /home/suwayomi/.local/share/Tachidesk   # Tachidesk data dir (DB) on Longhorn
             - name: manga
-              mountPath: /manga  # shared NFS library, READ-WRITE (downloadsPath -> /manga)
+              mountPath: /mnt/manga  # MUST match the LXC path the H2 DB references; downloadsPath=/mnt/manga, READ-WRITE
       volumes:
         - name: config
           persistentVolumeClaim:
