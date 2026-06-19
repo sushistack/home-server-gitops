@@ -524,4 +524,8 @@ material, IP, or `*.<zone>` host appears; Plane 0 secrets stay off-repo.
   `portainer.eli.kr` link); `docker rm -f portainer homepage` on `10.0.0.20` after the file change
   lands (CD `up -d` won't remove orphans); delete the `portainer.eli.kr` + homepage proxy-host
   entries in the NPM admin UI (NPM config is runtime data, not in git); remove the now-orphan
-  `ENV_HOMEPAGE_ALLOWED_HOSTS` GitHub repo secret.
+  `ENV_HOMEPAGE_ALLOWED_HOSTS` GitHub repo secret. **Also prune the two LAN DNS overrides
+  `home.eli.kr` and `portainer.eli.kr` (→ `10.0.0.20`) from OpenWrt
+  (`configs/openwrt/roles/openwrt-base/defaults/main.yml`)** — once the containers are gone these
+  names resolve to a dead backend (NPM 404/502). Left for the operator's next OpenWrt apply because
+  OpenWrt is Plane 0 (out of this story's scope; edits are STAGED across the parallel 5-x stories).
