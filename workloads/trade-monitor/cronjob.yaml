@@ -36,10 +36,10 @@ spec:
           # into this namespace and add imagePullSecrets here (Reconciliation 3).
           containers:
             - name: trade-monitor
-              # Built from the trade.monitor repo CI (.github/workflows/build.yml). Tag `0.1.0` until
-              # the first build; SWAP TO @sha256 digest at hardening (AR29 — the CI job summary prints
-              # it). Bump via PR (versions.yaml mirror + this line in the same PR — bin/version-lint).
-              image: ghcr.io/sushistack/trade.monitor:0.1.0
+              # Built from the trade.monitor repo CI (.github/workflows/build.yml), pinned by digest
+              # (AR29). This digest = the fonts-dejavu-core build (PIL needs the system TTF; tag 0.1.0
+              # + sha-e304111). Bump via PR (versions.yaml mirror + this line — bin/version-lint).
+              image: ghcr.io/sushistack/trade.monitor@sha256:b20dc1dca1860ae5dcd69a5f07a77f70ea7dd361ef4ba71ff874bf282c8a5478
               resources:
                 requests:
                   cpu: 100m
