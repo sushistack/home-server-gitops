@@ -12,10 +12,11 @@
 # 🔴 RUNNER NEEDS THE `sops` BINARY: community.sops (requirements.yml) shells out to the `sops` CLI
 # to decrypt group_vars/*.sops.yaml. The stock semaphoreui/semaphore image ships ansible-core but NOT
 # `sops` (confirmed 2026-06-20: a --check run failed `[Errno 2] No such file or directory: 'sops'`).
-# FIX (no custom image): the `install-sops` initContainer drops the pinned sops binary into a shared
-# emptyDir (`bin`) mounted at /opt/bin, which is prepended to the main container's PATH. sops has native
-# age support, so SOPS_AGE_KEY_FILE alone decrypts — no separate `age` binary needed. Pin matches the
-# workstation (3.13.0) so break-glass + Semaphore use the same sops.
+# FIX (no custom image): a postStart hook curls the pinned sops binary into /usr/local/bin (already on
+# PATH + writable; the image bundles curl). Do NOT set a static PATH env — Semaphore runs ansible from a
+# versioned app venv (/opt/semaphore/apps/ansible/<ver>/venv/bin) that it injects into PATH per-task;
+# overriding PATH hides it ("ansible-playbook not found"). sops has native age support, so
+# SOPS_AGE_KEY_FILE alone decrypts — no separate `age` binary. Pin matches the workstation (3.13.0).
 #
 # Runs as ROOT: reads the root-owned 0400 mounted SSH/age key files directly and writes the root:root
 # Longhorn PVC — no fsGroup/chown gymnastics (the komga "runs as root" rationale). The pod already SSHes
@@ -48,30 +49,25 @@ spec:
       securityContext:
         runAsUser: 0          # explicit root — see header (0400 ssh/age mounts, no fsGroup)
         runAsGroup: 0
-      initContainers:
-        # community.sops shells out to `sops` (absent from the stock image). Drop the pinned binary
-        # into the shared `bin` emptyDir; the main container has /opt/bin first on PATH. Version pinned
-        # to match the workstation sops (3.13.0) so SOPS-in-git decrypts identically everywhere.
-        - name: install-sops
-          image: curlimages/curl:8.11.0
-          command:
-            - sh
-            - -c
-            - |
-              set -eu
-              curl -fsSL -o /opt/bin/sops \
-                https://github.com/getsops/sops/releases/download/v3.13.0/sops-v3.13.0.linux.amd64
-              chmod 0755 /opt/bin/sops
-              /opt/bin/sops --version
-          volumeMounts:
-            - name: bin
-              mountPath: /opt/bin
       containers:
         - name: semaphore
           # semaphoreui/semaphore. CONFIRM the current stable tag at install (this is a plausible
           # placeholder) + SWAP TO @sha256 digest at cutover (AR29):
           #   docker buildx imagetools inspect semaphoreui/semaphore:v2.18.12
           image: semaphoreui/semaphore:v2.18.12
+          # Install sops into /usr/local/bin (on PATH) after start — see header. Best-effort: a download
+          # failure must NOT crash-loop the Semaphore UI (sops is only needed when a task runs; a missing
+          # sops surfaces as a clear task error, not an outage). Re-runs on every (re)start; ~1s.
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - |
+                    curl -fsSL -o /usr/local/bin/sops \
+                      https://github.com/getsops/sops/releases/download/v3.13.0/sops-v3.13.0.linux.amd64 \
+                      && chmod 0755 /usr/local/bin/sops || true
           ports:
             - containerPort: 3000
           env:
@@ -92,10 +88,6 @@ spec:
             # (Reconciliation 4). Single age identity = the cluster DR key (gate0-dr), 0 new keys.
             - name: SOPS_AGE_KEY_FILE
               value: /keys/age/keys.txt
-            # /opt/bin (from the install-sops initContainer) first so ansible's community.sops finds
-            # `sops`. Rest = the image's standard alpine PATH.
-            - name: PATH
-              value: /opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
           # Admin bootstrap creds + access-key encryption key (must be STABLE across restarts — it
           # encrypts stored access keys in BoltDB). Sealed by the operator (Task 1b).
           envFrom:
@@ -126,9 +118,6 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/semaphore     # BoltDB + cloned repo + tmp
-            - name: bin
-              mountPath: /opt/bin               # sops binary from the initContainer (on PATH)
-              readOnly: true
             - name: ssh
               mountPath: /keys/ssh
               readOnly: true
@@ -139,8 +128,6 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: semaphore-data
-        - name: bin
-          emptyDir: {}
         # SSH keys — 0400, read by root. The semaphore-ssh secret holds TWO files (existing keys, no
         # new ones): /keys/ssh/openwrt (root@10.0.0.1, HIGH blast radius) + /keys/ssh/oracle
         # (ubuntu@Oracle). The Semaphore static inventory points each host at its file (runbook §1c).
