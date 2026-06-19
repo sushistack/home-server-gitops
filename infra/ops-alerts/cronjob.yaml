@@ -43,8 +43,8 @@ spec:
                   value: homelab-ops                            # NFR15b drift/health
                 - name: TZ
                   value: Asia/Seoul
-                # Story 5.8 (AC2) — R2 backup monitor thresholds (the check is skipped until the
-                # ops-alerts-r2 envFrom below is uncommented; these are read by alert.sh with defaults).
+                # Story 5.8 (AC2) — R2 backup monitor thresholds (read by alert.sh; the R2 block is
+                # active via the ops-alerts-r2 envFrom below — LIVE since gitops a800d21).
                 - name: R2_THRESHOLD_GB
                   value: "8"                                    # alert before the ~10 GB R2 free tier
                 - name: R2_STALE_HOURS
