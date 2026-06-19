@@ -66,6 +66,10 @@ spec:
                   cp -a /data/config.json /scratch/bundle/ 2>/dev/null || true
                   [ -d /data/attachments ] && cp -a /data/attachments /scratch/bundle/
                   [ -d /data/sends ] && cp -a /data/sends /scratch/bundle/
+                  # rsa_key.pem is load-bearing (JWT signing — lose it = mass re-auth). The cp above is
+                  # `|| true`, so a missing/renamed key would otherwise upload a silently key-less bundle
+                  # that still "succeeds". Fail loud instead -> Job Failed -> NFR15a alerts.
+                  test -f /scratch/bundle/rsa_key.pem || { echo "FATAL: rsa_key.pem absent from backup bundle" >&2; exit 1; }
                   tar -C /scratch/bundle -czf "/scratch/vaultwarden-${ts}.tar.gz" .
                   rclone copy "/scratch/vaultwarden-${ts}.tar.gz" "r2:homelab-k3s-services-backup/vaultwarden/"
                   # ~30-day retention (offen semantics). homelab-k3s-services-backup is the dedicated
