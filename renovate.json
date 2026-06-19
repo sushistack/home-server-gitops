@@ -1,0 +1,66 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard", ":semanticCommits"],
+  "automerge": false,
+  "platformAutomerge": false,
+  "prHourlyLimit": 2,
+  "prConcurrentLimit": 6,
+  "labels": ["renovate", "upgrade"],
+  "argocd": {
+    "fileMatch": [
+      "^argocd/apps/.+\\.yaml$",
+      "^argocd/applicationsets/.+\\.yaml$"
+    ]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Workload image refs — kept identical in the manifest AND versions.yaml (bin/version-lint enforces the mirror), so match both globs in one manager => one PR rewrites both files.",
+      "fileMatch": [
+        "^workloads/.+/deployment.*\\.yaml$",
+        "^versions\\.yaml$"
+      ],
+      "matchStrings": [
+        "image:\\s*(?<depName>[^\\s:@]+(?:/[^\\s:@]+)*)(?::(?<currentValue>[^\\s@\"']+))?(?:@(?<currentDigest>sha256:[a-f0-9]+))?"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Platform Helm chart pins in versions.yaml (mirror of the argocd/apps targetRevisions). Inline `# renovate:` comments carry datasource/depName/registryUrl; depName matches the chart name the argocd manager uses, so both files bump in one PR.",
+      "fileMatch": ["^versions\\.yaml$"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+) registryUrl=(?<registryUrl>\\S+)\\s+chartVersion:\\s*[\"']?(?<currentValue>[^\"'\\s]+)"
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Default soak for everything (one component = one PR; Renovate's default is per-dependency).",
+      "matchPackageNames": ["*"],
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "ArgoCD = CURRENT policy. CRDs stay argoproj.io/v1alpha1 even on 3.x, so a chart bump won't silently break refs — take bumps promptly, no soak.",
+      "matchPackageNames": ["argo-cd"],
+      "minimumReleaseAge": "0 days",
+      "labels": ["renovate", "upgrade:current"]
+    },
+    {
+      "description": "etcd / k3s = CONSERVATIVE policy (the multi-node-on-one-host etcd-quorum race makes these highest-blast-radius). Visible-but-not-rushed: long soak, kept off the demo path. NOTE: k3s itself is a host-bootstrap pin (Ansible, versions.yaml k3s.version) with no Renovate datasource, so this rule guards any etcd/k3s *container* that ever enters scope.",
+      "matchPackageNames": ["/k3s/", "/etcd/"],
+      "minimumReleaseAge": "30 days",
+      "labels": ["renovate", "upgrade:conservative"]
+    },
+    {
+      "description": "ArgoCD must NOT manage the k3s-bundled Traefik CRD/controller (architecture Networking rule) — never open a Traefik bump PR against this repo.",
+      "matchPackageNames": ["/traefik/"],
+      "enabled": false
+    },
+    {
+      "description": "Pin-by-digest stays pinned: refresh the digest when the upstream tag moves. Images pinned `name@sha256:` with NO tag are immutable and not Renovate-trackable (no tag to follow) — pin as `name:<tag>@sha256:<digest>` to make a workload trackable. Honest ceiling, documented in the runbook.",
+      "matchDatasources": ["docker"],
+      "pinDigests": true
+    }
+  ]
+}

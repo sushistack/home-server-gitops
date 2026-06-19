@@ -13,6 +13,7 @@ argocd:
   # are a one-line bump here + a manual self-app sync (AR5/NFR14).
   repo: https://argoproj.github.io/argo-helm
   chart: argo-cd
+  # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
   chartVersion: 9.5.21   # -> appVersion v3.4.3
   appVersion: v3.4.3
 
@@ -30,6 +31,7 @@ cert-manager:
   # (older charts used `installCRDs: true`). ServerSideApply required (CRD annotations are large).
   repo: https://charts.jetstack.io
   chart: cert-manager
+  # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
   chartVersion: v1.19.5
   appVersion: v1.19.5
 
@@ -42,6 +44,7 @@ longhorn:
   # ServerSideApply required (Longhorn CRD annotations exceed client-side apply — AR7).
   repo: https://charts.longhorn.io
   chart: longhorn
+  # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
   chartVersion: 1.12.0     # -> appVersion v1.12.0 (released 2026-06-02)
   appVersion: v1.12.0
 
@@ -54,6 +57,77 @@ sealed-secrets:
   # sealing format stays aligned with the controller. ServerSideApply required (large CRD — AR7).
   repo: https://bitnami.github.io/sealed-secrets   # repo moved bitnami-labs -> bitnami (old Pages site 404s)
   chart: sealed-secrets
+  # renovate: datasource=helm depName=sealed-secrets registryUrl=https://bitnami.github.io/sealed-secrets
   chartVersion: 2.18.6     # -> appVersion v0.37.0
   appVersion: v0.37.0
   kubeseal: v0.37.0        # local CLI pin — keep in lockstep with appVersion on any bump
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Workload image registry (Story 5.3 — completes the Version SSOT, AC1).
+#
+# "What is on what version" is answerable from THIS file alone — platform charts
+# above, application images below. Each entry pins the *exact* image ref the
+# manifest runs (digest preferred per AR29; explicit tag where upstream ships no
+# stable digest). NO `:latest`, ever (enforcement rule).
+#
+# # ponytail: this is the SANCTIONED mirror, not a single-substitution CMP.
+#   There is no image-templating layer (the render CMP only substitutes
+#   ${SECRET:*} hostname tokens), and building one for ~14 images would be
+#   over-engineering. So the deploy-time value also lives inline in each manifest
+#   and this file mirrors it. `bin/version-lint` makes THIS file authoritative:
+#   it fails CI if a manifest's image drifts from the ref pinned here, so the
+#   "second place" is a checked mirror, not an independent source.
+#   Ceiling: edit-here-then-mirror + lint. Upgrade path if mirroring ever chafes:
+#   a Kustomize `images:` transformer per overlay (single substitution). Not now.
+#   Renovate (renovate.json) opens the bump PRs against the manifests; bump this
+#   file in the SAME PR (the lint enforces it).
+#
+# NOT enumerated here (Renovate still manages them inline, but they don't define
+# "what version is service X on"): pure tool images — alpine:3.20 / busybox:1.36
+# (cutover ingest + backup jobs), alpine/k8s in infra/ops-alerts. k3s + helm pins
+# (above) are host-bootstrap via Ansible, NOT ArgoCD-synced, so the lint checks
+# the chart pins against argocd/apps targetRevisions but leaves those two to the
+# bootstrap layer.
+workloads:
+  excalidraw:
+    manifest: workloads/excalidraw/deployment.yaml
+    image: excalidraw/excalidraw@sha256:f7ee194addd607bf831d2af0f0a34463dd4225e426cf35199ef0b12a803398e9
+  ytdlp-api:
+    manifest: workloads/ytdlp-api/deployment.yaml
+    image: nbr23/youtube-dl-server@sha256:5b4cc20efbb277a1c8819c4618c3b57c56e68d39534760c3b9b768ef20aed5ce
+  ntfy:
+    manifest: workloads/ntfy/deployment.yaml
+    image: binwiederhier/ntfy@sha256:f8a9b104313b87cc24ae4f775f39e6328205b57dff6ede3eaf098a91e5d79f59
+  navidrome:
+    manifest: workloads/navidrome/deployment.yaml
+    image: deluan/navidrome@sha256:c4b5cb36a790b3eb63ca6a68bbe2fe149c2d7fa2e586f7a480e61db630e6664b
+  miniflux:
+    manifest: workloads/miniflux/deployment.yaml
+    image: miniflux/miniflux:2.3.1     # upstream ships no stable digest tag stream; explicit semver tag
+  miniflux-db:
+    manifest: workloads/miniflux/db-deployment.yaml
+    image: postgres:18                 # major pin (client major == server major, AR29); patch floats within 18
+  n8n:
+    manifest: workloads/n8n/deployment.yaml
+    image: n8nio/n8n:2.23.4
+  anytype-heart:
+    manifest: workloads/anytype/deployment-heart.yaml
+    image: ghcr.io/sushistack/home.server/anytype-heart@sha256:8f1de0ea70e34ef976b98a2cbdc9622fd7ee24c713c724d301500a066f8aac73
+  anytype-anysync:
+    manifest: workloads/anytype/deployment-anysync.yaml
+    image: ghcr.io/grishy/any-sync-bundle@sha256:f25e0a648c78a3b36fa44dc8c0deda8c4b35c8b3f50799f04b31ba4531e732d5
+  karakeep-web:
+    manifest: workloads/karakeep/deployment-web.yaml
+    image: ghcr.io/karakeep-app/karakeep@sha256:64d6a9bbf2d37b5c808cf06b5d87f1f1c7846fdd3844724145a9741aeb06fd31
+  karakeep-meilisearch:
+    manifest: workloads/karakeep/deployment-meilisearch.yaml
+    image: getmeili/meilisearch@sha256:860fa4baed04ae1c235de870edab0c8006227546dea1bbb6411fbfc5e27cf1db
+  karakeep-chrome:
+    manifest: workloads/karakeep/deployment-chrome.yaml
+    image: gcr.io/zenika-hub/alpine-chrome@sha256:1a0046448e0bb6c275c88f86e01faf0de62b02ec8572901256ada0a8c08be23f
+  karakeep-bridge:
+    manifest: workloads/karakeep/deployment-bridge.yaml
+    image: ghcr.io/sushistack/home.server/karakeep-anytype-bridge@sha256:d39011c4002edb387ffda07cd12c7cfcd41cc8951627e415d90dab4714414afb
+  vaultwarden:
+    manifest: workloads/vaultwarden/deployment.yaml
+    image: vaultwarden/server@sha256:d626d04934cd1192ad8ced1adb975099fca78cec33ab467d2d3c923cde7f3b0c

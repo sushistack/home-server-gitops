@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# version-lint — make versions.yaml the authoritative Version SSOT (Story 5.3, AC1).
+#
+# The repo has no image-templating layer (the render CMP only substitutes
+# ${SECRET:*} hostname tokens), so workload image refs live inline in each
+# manifest AND are mirrored in versions.yaml. This lint is what makes that a
+# *checked mirror* rather than a second independent source of truth:
+#
+#   1. every versions.yaml `workloads.<svc>` image ref is present in its manifest
+#   2. every platform chartVersion is referenced by an argocd/apps Application
+#   3. nothing in the synced tree uses a floating `:latest` tag
+#
+# Run locally (`bin/version-lint`) or in CI; `--list` prints the one-file answer
+# to "what is on what version". No yq/jq dependency — plain awk+grep.
+#
+# ponytail: ~30 lines of grep beats a Kustomize images-transformer for ~14 images.
+#   Upgrade path is in versions.yaml if mirroring ever chafes.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+VERSIONS=versions.yaml
+fail=0
+
+# Pair (manifest,image) lines inside the `workloads:` block. Each entry lists
+# `manifest:` immediately before `image:`, so we just zip them in order.
+pairs() {
+  awk '
+    /^workloads:/      { inw=1; next }
+    /^[^[:space:]#]/   { inw=0 }                 # any new top-level key ends the block
+    inw && $1=="manifest:" { m=$2 }
+    inw && $1=="image:"    { print m"\t"$2 }
+  ' "$VERSIONS"
+}
+
+if [[ "${1:-}" == "--list" ]]; then
+  echo "# Platform (charts — ArgoCD-synced):"
+  grep -E '^(k3s|argocd|cert-manager|longhorn|sealed-secrets|helm):|chartVersion:|  version:|  appVersion:' "$VERSIONS"
+  echo
+  echo "# Workloads (images):"
+  pairs | awk -F'\t' '{printf "  %-55s %s\n", $1, $2}'
+  exit 0
+fi
+
+echo "== version-lint: workload image mirror =="
+while IFS=$'\t' read -r manifest image; do
+  [[ -z "$manifest" || -z "$image" ]] && continue
+  if [[ ! -f "$manifest" ]]; then
+    echo "  ✗ $manifest — listed in versions.yaml but file missing"; fail=1; continue
+  fi
+  if grep -qF "image: $image" "$manifest"; then
+    echo "  ✓ $manifest pins $image"
+  else
+    echo "  ✗ $manifest does NOT pin '$image' (versions.yaml drifted from the manifest — bump both in the same PR)"; fail=1
+  fi
+done < <(pairs)
+
+echo "== version-lint: platform chartVersion is referenced =="
+# Each chartVersion in versions.yaml must appear as a targetRevision in argocd/apps.
+# (k3s + helm are host-bootstrap via Ansible, not ArgoCD-synced — out of scope here.)
+while read -r ver; do
+  if grep -rqF "targetRevision: $ver" argocd/apps/; then
+    echo "  ✓ chartVersion $ver referenced in argocd/apps/"
+  else
+    echo "  ✗ chartVersion $ver not found in any argocd/apps/ Application targetRevision"; fail=1
+  fi
+done < <(grep -E '^[[:space:]]+chartVersion:' "$VERSIONS" | awk '{print $2}')
+
+echo "== version-lint: no floating :latest in the synced tree =="
+# Match `image: ...:latest` (or bare `image: name` with no tag/digest is also a
+# floating ref) across what ArgoCD reconciles. Exclude comments.
+if grep -rnE '^\s*image:\s*\S+:latest\s*$' workloads/ infra/ argocd/ 2>/dev/null | grep -v '#'; then
+  echo "  ✗ :latest tag found above — pin an explicit tag or digest (enforcement rule)"; fail=1
+else
+  echo "  ✓ no :latest tags"
+fi
+
+if [[ $fail -ne 0 ]]; then
+  echo "== version-lint FAILED =="; exit 1
+fi
+echo "== version-lint OK =="

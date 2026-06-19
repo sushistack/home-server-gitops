@@ -59,8 +59,13 @@ by the [`adr-link-check`](.github/workflows/adr-link-check.yml) CI gate.
 
 One-line decision log: [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
-The **3-line rule:** rollback is `git revert` + reconcile — never an out-of-band
-`kubectl rollout undo`; out-of-band drift is reverted by self-heal anyway.
+The **3-line rule:** an upgrade is a PR → one component at a time → app health green
+before the next; rollback is `git revert` + reconcile — never an out-of-band
+`kubectl rollout undo` (out-of-band drift is reverted by self-heal anyway). Version pins
+live in one SSOT ([`versions.yaml`](versions.yaml)); the full upgrade/rollback procedure,
+the differential policy (conservative on etcd/k3s, current on ArgoCD), and the
+Renovate drift-PR setup are in the
+[upgrade & rollback runbook](docs/runbooks/upgrade-rollback.md).
 
 ## Architecture diagrams
 
