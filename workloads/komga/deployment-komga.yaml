@@ -1,8 +1,8 @@
-# Story 5.6 — komga (the manga/comic READER). Mounts the shared NFS manga library READ-ONLY at /data
-# and its own SQLite config (database.sqlite + tasks.sqlite) on a Longhorn PVC at /config. komga runs
-# as root in the upstream image, so no chown initContainer is needed (it can write /config and read
-# the NFS export). SQLite -> strategy:Recreate + grace 30s + startupProbe (WAL replay), per the Epic 4
-# SQLite pattern (Reconciliation 5).
+# Story 5.6 — komga (the manga/comic READER). Mounts the shared node-local manga PV READ-ONLY at
+# /mnt/manga and its own SQLite config (database.sqlite + tasks.sqlite) on a Longhorn PVC at /config.
+# komga runs as root in the upstream image, so no chown initContainer is needed (it can write /config
+# and read the manga PV). SQLite -> strategy:Recreate + grace 30s + startupProbe (WAL replay), per the
+# Epic 4 SQLite pattern (Reconciliation 5).
 apiVersion: apps/v1
 kind: Deployment
 metadata:

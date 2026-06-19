@@ -1,5 +1,5 @@
 # Story 5.6 — Suwayomi/Tachidesk (the manga DOWNLOADER/source). Writes new manga INTO the shared
-# library, so it mounts the NFS export READ-WRITE; its own DB/sources/settings live on a Longhorn PVC.
+# library, so it mounts the node-local manga PV READ-WRITE; its own DB/sources/settings live on a Longhorn PVC.
 # Reconciliation 5: komga + suwayomi are two Deployments in one namespace sharing one library (the
 # karakeep multi-component-in-one-workload shape).
 #
@@ -31,8 +31,8 @@ spec:
       securityContext:
         runAsUser: 1000      # upstream image user; the Longhorn PVC is chowned to match below
       # A freshly-provisioned Longhorn volume mounts root:root 0755 -> EACCES when uid 1000 opens its
-      # DB. Chown it once before the app starts (the karakeep-bridge pattern). The NFS export's perms
-      # are set on the server side (runbook), not here.
+      # DB. Chown it once before the app starts (the karakeep-bridge pattern). The node-local manga PV's
+      # perms were set at copy time (chown 1000 on k3s-cp-1:/mnt/manga), not here.
       initContainers:
         - name: data-fix
           image: busybox:1.36
@@ -55,9 +55,10 @@ spec:
               mountPath: /home/suwayomi/.local/share/Tachidesk
       containers:
         - name: suwayomi
-          # ghcr.io/suwayomi/tachidesk. CONFIRM the current stable tag + SWAP TO @sha256 at cutover (AR29):
+          # ghcr.io/suwayomi/tachidesk — digest-pinned (AR29; :stable is a FLOATING tag, retired).
+          # Digest = the live-running image as of 2026-06-19. Re-resolve on a deliberate bump:
           #   docker buildx imagetools inspect ghcr.io/suwayomi/tachidesk:stable
-          image: ghcr.io/suwayomi/tachidesk:stable
+          image: ghcr.io/suwayomi/tachidesk@sha256:6bb8fa8cf1cf86589e5851f2f1c2ede5c8248d53982ec1795a715dcde85b1da2  # stable @ 2026-06-19
           ports:
             - containerPort: 4567
           env:

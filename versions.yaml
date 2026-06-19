@@ -141,7 +141,7 @@ workloads:
     image: gotson/komga:1.24.4   # must match the LXC DB schema (older = TEMP_STRING_LIST breakage)
   suwayomi:
     manifest: workloads/komga/deployment-suwayomi.yaml
-    image: ghcr.io/suwayomi/tachidesk:stable
+    image: ghcr.io/suwayomi/tachidesk@sha256:6bb8fa8cf1cf86589e5851f2f1c2ede5c8248d53982ec1795a715dcde85b1da2  # stable @ 2026-06-19 (retired floating :stable, AR29)
   calibre:
     manifest: workloads/calibre/deployment.yaml
     image: lscr.io/linuxserver/calibre-web:0.6.24
@@ -150,7 +150,7 @@ workloads:
   # (AR29 — each manifest comment carries the `imagetools inspect` command).
   semaphore:
     manifest: workloads/semaphore/deployment.yaml
-    image: semaphoreui/semaphore:v2.16.21
+    image: semaphoreui/semaphore:v2.18.12
   heimdall:
     manifest: workloads/heimdall/deployment.yaml
     image: lscr.io/linuxserver/heimdall:2.6.3
