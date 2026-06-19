@@ -13,6 +13,41 @@ high-blast-radius OpenWrt DNS edit. Same DEV-authors / operator-runs split as th
 
 ---
 
+## ✅ LIVE EXECUTION LOG — 2026-06-19 (platform bring-up done)
+
+All three apps are deployed, **Synced/Healthy**, per-host **certs Ready**, and reachable on LAN over
+HTTPS (200, valid cert): `semaphore.eli.kr`, `heimdall.eli.kr`, `beszel.eli.kr` → `10.0.0.101`.
+OpenWrt DNS applied live + reconciled into `configs/openwrt/.../main.yml`.
+
+What was done: sealed the 3 Semaphore secrets (`seal-secrets.sh`), added the 3 `DOMAIN_*` render
+tokens to the live `argocd-render-tokens` Secret, applied the OpenWrt DNS overrides (surgical
+`uci add_list`), filled the Beszel agent key.
+
+🔴 **Gotchas found live (manifests already fixed):**
+1. **kubeseal controller name** — this cluster's controller Service is `sealed-secrets`, not the
+   kubeseal default `sealed-secrets-controller`; needs `--controller-name sealed-secrets`.
+2. **Render tokens are a precondition** — without `DOMAIN_*` in the live `argocd-render-tokens` Secret
+   the CMP fails `unresolved token(s)` and the app never syncs. The Secret's data key is `tokens.env`
+   (a single env blob); append the 3 lines and `kubectl apply` (mount refreshes in ~60s).
+3. **Semaphore image** — `v2.16.21` did not exist (placeholder); pinned real stable **v2.18.12**.
+4. **Semaphore `enableServiceLinks: false`** — the Service named `semaphore` made k8s inject
+   `SEMAPHORE_PORT=tcp://…`, which Semaphore reads as its own port → panic. Disabled service links.
+5. **Semaphore DB = sqlite, NOT bolt** — BoltDB is deprecated and v2.18's terraform store panics
+   `unknown store type`. Using `SEMAPHORE_DB_DIALECT=sqlite` (still embedded, no sidecar).
+6. **Beszel agent crash-loops on a placeholder KEY** on 0.18 (parses keys at startup) — it is NOT
+   "harmless until filled". The hub generates its keypair in its PVC; the agent's public KEY was
+   derived by scaling the hub to 0, reading `/beszel_data/id_ed25519`, `ssh-keygen -y`, scaling back.
+
+**Remaining = in-app UI config only (each app's own first-run, by design):**
+- **Semaphore** (§1c): log in `admin` / password in operator's `~/.semaphore-admin-pw`; create the
+  project + repo + static inventory + key + the `--check` drift template (the review-gated apply
+  template stays a deliberate human setup — BITE 1).
+- **Beszel** (§3): first-run create admin in the hub UI, then **Add System** ×3 (`10.0.0.101–103`,
+  port `45876`). Agents are already running and listening.
+- **Heimdall**: tiles — optional, deferred to Story 5.8.
+
+---
+
 ## 0. Preconditions
 
 - Project **DONE** (Story 4.8, `docs/DONE.md`). Opportunistic — no gate.
