@@ -34,10 +34,23 @@ spec:
               env:
                 - name: NTFY_URL
                   value: http://ntfy.ntfy.svc.cluster.local   # FQDN (AR28 — short name won't resolve cross-ns)
-                - name: NTFY_TOPIC
-                  value: alerts                                 # the deny-all ntfy ops topic (Story 4.1)
+                # Story 5.8 (AC3) — topic split by concern (was single NTFY_TOPIC: alerts). The token
+                # in ops-alerts-secrets must hold `wo` on BOTH topics (ntfy is deny-all; operator grants
+                # via `ntfy access` — see legacy-teardown.md). homelab-monitor (Beszel) is not used here.
+                - name: NTFY_TOPIC_CRITICAL
+                  value: homelab-critical                       # NFR15a stateful/backup failures (+ R2)
+                - name: NTFY_TOPIC_OPS
+                  value: homelab-ops                            # NFR15b drift/health
                 - name: TZ
                   value: Asia/Seoul
+                # Story 5.8 (AC2) — R2 backup monitor thresholds (the check is skipped until the
+                # ops-alerts-r2 envFrom below is uncommented; these are read by alert.sh with defaults).
+                - name: R2_THRESHOLD_GB
+                  value: "8"                                    # alert before the ~10 GB R2 free tier
+                - name: R2_STALE_HOURS
+                  value: "13"                                   # 2x the 6h backup cadence + headroom
+                - name: R2_RETENTION_DAYS
+                  value: "35"                                   # oldest object older than this => rotation broke
                 # NFR15b (Story 5.1) — k3s version pin baked from versions.yaml (the cluster can't read
                 # Git). Bump here whenever versions.yaml#k3s.version bumps (keep in lockstep on upgrade).
                 - name: K3S_PINNED_VERSION
@@ -48,7 +61,12 @@ spec:
                   value: argocd
               envFrom:
                 - secretRef:
-                    name: ops-alerts-secrets   # NTFY_TOKEN (write on the ops topic) — SealedSecret, never inline
+                    name: ops-alerts-secrets   # NTFY_TOKEN (write on the topics) — SealedSecret, never inline
+                # Story 5.8 (AC2) — R2 cred (RCLONE_CONFIG_R2_*) for the capacity/rotation check.
+                # Resealed from ntfy-backup-r2 to ns ops-alerts. Bucket-scoped Object R&W — it can List
+                # + size objects in the two backup buckets, which is all the check needs.
+                - secretRef:
+                    name: ops-alerts-r2
               resources:
                 requests:
                   cpu: 10m

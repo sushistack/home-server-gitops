@@ -23,6 +23,14 @@ data:
                                                    # silently drop BOTH (f) version-drift AND (g) NotReady). Empty = skip the
                                                    # (f) version compare only (jq guards on $pin != ""); (g) NotReady still runs.
 
+    # Story 5.8 (AC3) — topic split by CONCERN (not per-app): NFR15a stateful/backup failures ->
+    # critical (wake me); NFR15b drift/health -> ops (review when convenient). Beszel node-resource
+    # goes to a third topic (homelab-monitor) configured on Beszel's side, not here. Defaults keep the
+    # script working even if the CronJob env isn't updated. The ntfy token must hold `wo` on BOTH
+    # topics (ntfy is deny-all — operator grants via `ntfy access`, see legacy-teardown.md).
+    NTFY_TOPIC_CRITICAL="${NTFY_TOPIC_CRITICAL:-homelab-critical}"
+    NTFY_TOPIC_OPS="${NTFY_TOPIC_OPS:-homelab-ops}"
+
     # Make the egress gotcha LOUD, not silent: if the apiserver is unreachable (the #1 predictable
     # failure once network-baseline default-deny lands without our egress allow), exit non-zero so
     # the Job goes Failed and is visible — rather than every check silently reading nothing.
@@ -31,21 +39,21 @@ data:
 
     now=$(date -u +%s)
 
-    notify() {  # $1 title, $2 body  — failure to publish is logged, never aborts the poll
+    notify() {  # $1 topic, $2 title, $3 body  — failure to publish is logged, never aborts the poll
       # JSON publish (not X-Title/-d headers): HTTP headers are latin-1, so 한글/이모지 in the
       # title/body would mojibake. jq builds the payload (safe escaping) — already a dependency.
-      payload=$(jq -nc --arg topic "$NTFY_TOPIC" --arg t "$1" --arg m "$2" \
+      payload=$(jq -nc --arg topic "$1" --arg t "$2" --arg m "$3" \
         '{topic:$topic, title:$t, message:$m, priority:5}') \
-        || { echo "ERROR: payload build failed [$1] $2"; return 0; }   # guard: under set -eu a bare $(…) failure aborts the whole poll
+        || { echo "ERROR: payload build failed [$2] $3"; return 0; }   # guard: under set -eu a bare $(…) failure aborts the whole poll
       # POST to the ntfy ROOT url (topic is in the JSON body, not the path). Content-Type makes the
       # JSON-publish contract explicit instead of relying on ntfy's lenient root-url body sniffing.
       if curl -fsS --max-time 10 \
            -H "Authorization: Bearer ${NTFY_TOKEN}" \
            -H "Content-Type: application/json" \
            -d "$payload" "${NTFY_URL}" >/dev/null; then
-        echo "ALERT sent [$1] $2"
+        echo "ALERT sent [$1] [$2] $3"
       else
-        echo "ERROR: ntfy publish failed [$1] $2"
+        echo "ERROR: ntfy publish failed [$1] [$2] $3"
       fi
     }
 
@@ -56,7 +64,7 @@ data:
       | select(($exp - $now) <= ($warn * 86400))
       | "\(.metadata.namespace)/\(.metadata.name)\t\(.status.notAfter)"' \
     | while IFS="$(printf '\t')" read -r cert exp; do
-        notify "🔐 인증서 만료 임박: $cert" "인증서 $cert 가 $exp 에 만료됩니다 (${CERT_WARN_DAYS}일 이내 — 자동 갱신이 실패하고 있을 수 있어요)"
+        notify "$NTFY_TOPIC_CRITICAL" "🔐 인증서 만료 임박: $cert" "인증서 $cert 가 $exp 에 만료됩니다 (${CERT_WARN_DAYS}일 이내 — 자동 갱신이 실패하고 있을 수 있어요)"
       done
 
     # (b) Longhorn node disk >= 80%  (usage = 1 - storageAvailable/storageMaximum)
@@ -68,7 +76,7 @@ data:
       | select($used >= $pct)
       | "\($node)\t\(.key)\t\($used | floor)"' \
     | while IFS="$(printf '\t')" read -r node disk used; do
-        notify "💾 스토리지 부족: $node" "$node 의 Longhorn 디스크 $disk 사용률 ${used}% (임계치 ${DISK_PCT}% 초과)"
+        notify "$NTFY_TOPIC_CRITICAL" "💾 스토리지 부족: $node" "$node 의 Longhorn 디스크 $disk 사용률 ${used}% (임계치 ${DISK_PCT}% 초과)"
       done
 
     # Stateful namespaces = those carrying a <service>-backup CronJob (the Story 4.1 backup-actor
@@ -86,7 +94,7 @@ data:
         .items[] | select((.status.readyReplicas // 0) < (.spec.replicas // 0))
         | "\(.kind)/\(.metadata.name)\t\(.status.readyReplicas // 0)\t\(.spec.replicas // 0)"' \
       | while IFS="$(printf '\t')" read -r wl ready desired; do
-          notify "🔴 서비스 다운: $ns/$wl" "$ns/$wl 준비 상태 ${ready}/${desired} (상태저장 워크로드 비정상)"
+          notify "$NTFY_TOPIC_CRITICAL" "🔴 서비스 다운: $ns/$wl" "$ns/$wl 준비 상태 ${ready}/${desired} (상태저장 워크로드 비정상)"
         done
     done
 
@@ -97,7 +105,7 @@ data:
       .items[] | select((.status.failed // 0) >= 1) | select(.metadata.name | test("-(backup|restore)"))
       | "\(.metadata.namespace)/\(.metadata.name)\t\(.status.failed)"' \
     | while IFS="$(printf '\t')" read -r job failed; do
-        notify "❌ 백업/복원 실패: $job" "백업/복원 작업 $job 가 실패했습니다 (status.failed=${failed})"
+        notify "$NTFY_TOPIC_CRITICAL" "❌ 백업/복원 실패: $job" "백업/복원 작업 $job 가 실패했습니다 (status.failed=${failed})"
       done
 
     # ---- NFR15b: version/config drift (Story 5.1) ------------------------------------------------
@@ -122,7 +130,7 @@ data:
         )
       | "\($app)\tsync=\($sync) health=\($health)"' \
     | while IFS="$(printf '\t')" read -r app status; do
-        notify "🌥️ ArgoCD 드리프트: $app" "$app 가 $status — 라이브 상태가 Git 핀과 다릅니다. \`argocd app diff $app\` 확인 후 \`git revert\`(설정 변경 되돌리기) 또는 \`argocd app sync\`"
+        notify "$NTFY_TOPIC_OPS" "🌥️ ArgoCD 드리프트: $app" "$app 가 $status — 라이브 상태가 Git 핀과 다릅니다. \`argocd app diff $app\` 확인 후 \`git revert\`(설정 변경 되돌리기) 또는 \`argocd app sync\`"
       done
 
     # (f) k3s node version drift + (g) node NotReady — ONE nodes read, two branches (no extra RBAC).
@@ -139,10 +147,63 @@ data:
         (if $ready != "True" then "\($node)\tnotready\tReady=\($ready)" else empty end)' \
     | while IFS="$(printf '\t')" read -r node kind detail; do
         if [ "$kind" = "version" ]; then
-          notify "⬆️ k3s 버전 드리프트: $node" "$node kubelet 버전이 $detail 과 다릅니다 — 노드가 수동 업그레이드된 것으로 보입니다. versions.yaml 핀으로 재정렬하거나 의도된 업그레이드면 핀을 올리세요"
+          notify "$NTFY_TOPIC_OPS" "⬆️ k3s 버전 드리프트: $node" "$node kubelet 버전이 $detail 과 다릅니다 — 노드가 수동 업그레이드된 것으로 보입니다. versions.yaml 핀으로 재정렬하거나 의도된 업그레이드면 핀을 올리세요"
         else
-          notify "🔴 노드 NotReady: $node" "$node 가 $detail 상태입니다 (노드 다운 — 단일 호스트 SPOF 신호; 호스트/노드 상태를 확인하세요)"
+          notify "$NTFY_TOPIC_OPS" "🔴 노드 NotReady: $node" "$node 가 $detail 상태입니다 (노드 다운 — 단일 호스트 SPOF 신호; 호스트/노드 상태를 확인하세요)"
         fi
       done
+
+    # ---- Story 5.8 (AC2): R2 backup capacity + freshness + rotation -----------------------------
+    # Folded INTO this poller, NOT a new monitor (Reconciliation 3 / NFR15 = lightweight ntfy alerting).
+    # Reuses the bucket-scoped R2 cred via the ops-alerts-r2 SealedSecret (a reseal of ntfy-backup-r2
+    # to ns ops-alerts). SKIPPED until that secret is sealed + its envFrom uncommented in cronjob.yaml
+    # (RCLONE_CONFIG_R2_TYPE unset -> the whole block is a no-op), so the existing poller keeps working.
+    # rclone is apk-added on demand (same approach as the backup actors). The cred is literally an
+    # rclone remote config (RCLONE_CONFIG_R2_*), so `r2:` works with zero extra setup.
+    # ponytail: rclone size + ONE recursive lsjson per bucket; jq does the per-prefix math. No
+    #   Cloudflare GraphQL R2-analytics API (MB-scale DB dumps — listing is instant). Single global
+    #   staleness threshold (every backup actor runs */6h — per-svc intervals would be over-engineering).
+    #   The date-parse + group-by jq logic is mirrored in test-r2-parse.sh — keep the two in sync.
+    if [ -n "${RCLONE_CONFIG_R2_TYPE:-}" ]; then
+      if apk add --no-cache rclone >/dev/null 2>&1; then
+        R2_THRESHOLD_GB="${R2_THRESHOLD_GB:-8}"        # alert before the ~10 GB R2 free tier
+        R2_STALE_HOURS="${R2_STALE_HOURS:-13}"         # 2x the 6h backup cadence + headroom; newer = healthy
+        R2_RETENTION_DAYS="${R2_RETENTION_DAYS:-35}"   # oldest object older than this => rotation (4.8 `|| true`) broke
+        SVC_BUCKET=homelab-k3s-services-backup
+        LH_BUCKET=homelab-k3s-backup
+
+        # (a) capacity — total bytes per bucket vs threshold
+        for b in "$SVC_BUCKET" "$LH_BUCKET"; do
+          bytes=$(rclone size "r2:$b" --json 2>/dev/null | jq -r '.bytes // 0' 2>/dev/null || echo 0)
+          gb=$(( bytes / 1073741824 ))
+          if [ "$gb" -ge "$R2_THRESHOLD_GB" ]; then
+            notify "$NTFY_TOPIC_CRITICAL" "💽 R2 용량 임박: $b" "버킷 r2:$b 사용량 ${gb}GiB (임계치 ${R2_THRESHOLD_GB}GiB; 무료 한도 ~10GB). 오래된 백업 정리 또는 한도 상향이 필요합니다"
+          fi
+        done
+
+        # (b) freshness (broke backup actor) + (c) rotation (broke retention) — ONE recursive listing
+        #     of the services bucket, grouped by <svc>/ prefix. Longhorn's bucket uses its own layout
+        #     (not <svc>/), so it gets the capacity check only; its job health is the RecurringJob's.
+        stale=$(( R2_STALE_HOURS * 3600 )); ret=$(( R2_RETENTION_DAYS * 86400 ))
+        rclone lsjson -R --files-only "r2:$SVC_BUCKET" 2>/dev/null \
+        | jq -r --argjson now "$now" --argjson stale "$stale" --argjson ret "$ret" '
+            # rclone ModTime: 2026-06-19T10:00:00.123456789Z -> strip fractional secs -> ISO8601 epoch
+            def epoch: sub("\\.[0-9]+Z$";"Z") | fromdateiso8601;
+            [ .[] | select(.Path | contains("/")) | {svc: (.Path|split("/")[0]), t: (.ModTime|epoch)} ]
+            | group_by(.svc)[]
+            | { svc: .[0].svc, newest: (map(.t)|max), oldest: (map(.t)|min) }
+            | ( if ($now - .newest) > $stale then "STALE\t\(.svc)\t\((($now-.newest)/3600)|floor)" else empty end ),
+              ( if ($now - .oldest) > $ret  then "OLD\t\(.svc)\t\((($now-.oldest)/86400)|floor)"  else empty end )' \
+        | while IFS="$(printf '\t')" read -r kind svc age; do
+            if [ "$kind" = "STALE" ]; then
+              notify "$NTFY_TOPIC_CRITICAL" "🥪 백업 신선도 경고: $svc" "r2:$SVC_BUCKET/$svc/ 최신 객체가 ${age}시간 전입니다 — 백업 액터가 조용히 멈췄을 수 있어요 (작업 실패 알림과는 별개). 해당 \`${svc}-backup\` CronJob 로그를 확인하세요"
+            else
+              notify "$NTFY_TOPIC_CRITICAL" "🗑️ 백업 미회전: $svc" "r2:$SVC_BUCKET/$svc/ 가장 오래된 객체가 ${age}일 전입니다 (보존 ${R2_RETENTION_DAYS}일 초과) — 회전(rclone delete)이 실패 중입니다 (4.8 || true 사각지대). 회전 로직/권한을 확인하세요"
+            fi
+          done
+      else
+        echo "WARN: rclone install failed — skipping R2 capacity/rotation check this poll"
+      fi
+    fi
 
     echo "ops-alerter poll complete"

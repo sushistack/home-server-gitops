@@ -7,8 +7,11 @@ resources:
   - rbac.yaml              # ClusterRole + binding (cross-ns read-only) — homelab AppProject whitelists cluster resources
   - configmap.yaml         # alert.sh (the four checks)
   - sealedsecret.yaml      # ops-alerts-secrets: NTFY_TOKEN, sealed to name+ns (safe to commit)
-  - networkpolicy.yaml     # egress: DNS + apiserver + ntfy:80 (the egress gotcha)
+  - networkpolicy.yaml     # egress: DNS + apiserver + ntfy:80 + 0.0.0.0/0:443 (R2 + apk CDN — AC2 needs no delta)
   - cronjob.yaml
+  # Story 5.8 (AC2) — R2 cred (resealed from ntfy-backup-r2 to ns ops-alerts); pairs with the cronjob
+  # envFrom. Enables the R2 capacity/freshness/rotation block in alert.sh.
+  - sealedsecret-r2.yaml
 
 # `labels:` (newer field), NEVER commonLabels (selector pollution) / namePrefix (breaks SealedSecret
 # name binding). includeSelectors:false keeps these out of selectors + the NetworkPolicy podSelector
