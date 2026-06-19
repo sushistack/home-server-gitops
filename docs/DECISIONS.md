@@ -686,3 +686,12 @@ material, IP, or `*.<zone>` host appears; Plane 0 secrets stay off-repo.
   `storage-minimal-available-percentage=25` keeps 25% (≈50 GB) free for OS/etcd. The actual "Longhorn
   dying" cause was the 30 GB root filling (containerd images + the default-disk's reserved space) → root
   was 77–82% full; now 15–17%. komga's cp-1 local-volume (`/mnt/manga`, 200 GB `sdc`) is untouched. | Story 5.10 (disk)
+- 2026-06-20 | **Longhorn volume-level offsite backup enabled (R2 `homelab-k3s-backup`).** All 3 k3s
+  nodes are VMs on a single Proxmox host → Longhorn's 3 replicas share one failure domain, so a host
+  loss takes everything; the app-level DB dumps cover critical DB state offsite but the dump-less
+  services (semaphore/heimdall/beszel/suwayomi) had none. `infra/longhorn-backup/` configures the v1.12
+  BackupTarget CR + a daily→12h RecurringJob (retain 10 = 5 days, incremental, ~3.5 GiB first-full over
+  16 vols). **Media excluded** (navidrome-music, calibre ebook files — re-acquirable; calibre's DBs are
+  still dumped to services-backup) via a job-less `no-offsite` Longhorn group, keeping total R2 ≈ 5.8 GiB
+  under the 8 GiB ops-alerter threshold / 10 GiB free tier. Verified end-to-end (one-off backup → R2
+  Completed). The legacy `home-server-backups` bucket (Compose-era, 59 GB) was deleted by the operator. | Story 5.10 (backup)
