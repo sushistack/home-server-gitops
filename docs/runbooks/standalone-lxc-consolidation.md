@@ -123,7 +123,7 @@ internal calibre host (all → node 1, ServiceLB binds :443 on every node — th
 -  - "/comics-admin.eli.kr/10.0.0.20"
 +  - "/comics.eli.kr/10.0.0.101"        # Story 5.6: komga -> k3s (was NPM 10.0.0.20)
 +  - "/comics-admin.eli.kr/10.0.0.101"  # Story 5.6: Suwayomi -> k3s, INTERNAL-only (was NPM)
-+  - "/books.eli.kr/10.0.0.101"         # Story 5.6: calibre, NEW internal host (was LAN-direct 10.0.0.31:8083)
++  - "/book.eli.kr/10.0.0.101"          # Story 5.6: calibre -> k3s, PUBLIC (host is SINGULAR `book`; was NPM 20.conf, no IP-ACL)
 ```
 Optional (cosmetic, after decommission): drop the dead `calibre` (.31) + `trade-monitor` (.32) leases.
 **Do NOT touch the 10.0.0.200–206 leases** (the trade-monitor display targets STAY).
@@ -152,9 +152,10 @@ Pre-populate each PVC BEFORE the app's first sync (the appset selfHeal/empty-ini
 the Epic 4 cutovers: ingest into the PVC, then let ArgoCD generate the Application). Push the manifests;
 the `workloads` ApplicationSet generates `trade-monitor`, `komga`, `calibre`.
 
-Public flip for **komga only** (Suwayomi + calibre are internal — no CF route): edit the cloudflared
-tunnel ingress, insert `comics.eli.kr → https://10.0.0.101:443` (originServerName `comics.eli.kr`)
-BEFORE the `*.eli.kr → NPM` wildcard. (Same recipe as keep/rss; memory `cf-tunnel-flip`.)
+Public flip for **komga + calibre** (only Suwayomi is internal — no CF route): edit the cloudflared
+tunnel ingress, insert `comics.eli.kr` AND `book.eli.kr` → `https://10.0.0.101:443` (each with its own
+`originServerName`) BEFORE the `*.eli.kr → NPM` wildcard. (Same recipe as keep/rss; memory `cf-tunnel-flip`.)
+Both preserve their prior PUBLIC NPM exposure; comics-admin (Suwayomi) gets NO rule = internal.
 
 ---
 
@@ -169,7 +170,7 @@ kubectl -n calibre get pods,pvc
 # calibre: lists books, an ebook opens, metadata intact
 curl -fsS -o /dev/null -w '%{http_code}\n' https://comics.eli.kr/            # 200 (public + LAN)
 curl -fsS -o /dev/null -w '%{http_code}\n' https://comics-admin.eli.kr/      # 200 on LAN, NXDOMAIN/refused off-LAN
-curl -fsS -o /dev/null -w '%{http_code}\n' https://books.eli.kr/             # 200 on LAN only
+curl -fsS -o /dev/null -w '%{http_code}\n' https://book.eli.kr/              # 200 (public + LAN; SINGULAR `book`)
 # trade-monitor: charts refresh on 10.0.0.201-206 + the ulanzi ticker (10.0.0.200) updates
 ```
 
