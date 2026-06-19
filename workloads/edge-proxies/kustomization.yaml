@@ -5,7 +5,7 @@ resources:
   - namespace.yaml
   - common.yaml          # shared ServersTransport (insecure-backend) + redirect Middleware
   - proxmox.yaml         # https 8006 (self-signed)
-  - openwrt.yaml         # https 443 (self-signed; Plane 0 gateway)
+  - openwrt.yaml         # http 80 (plain LuCI per live NPM conf; Plane 0 gateway — no insecure-backend)
   - jellyfin.yaml        # http 8096  (confirm vs live NPM conf at cutover)
   - immich.yaml          # http 2283  (confirm vs live NPM conf at cutover)
   - kvm.yaml             # http 80    (confirm vs live NPM conf at cutover)

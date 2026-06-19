@@ -1,6 +1,7 @@
 # Story 5.7 — Semaphore is INTERNAL-only (operator tooling, not public). Internal-only =
 # NO cloudflared tunnel rule + a LAN-only OpenWrt DNS override → 10.0.0.101 (staged in the runbook).
-# Externally NXDOMAIN; the *.eli.kr wildcard still hits NPM, which has no route here → 502. NO
+# Externally NXDOMAIN; the *.eli.kr wildcard now points at Traefik (NPM retired in 5.8), which
+# default-denies unknown hosts → 404. NO
 # ipAllowList middleware: cloudflared egresses from a LAN IP, so an allowlist would ADMIT
 # internet-via-tunnel traffic — "no tunnel rule + LAN-only DNS" is the only correct internal gate
 # (the suwayomi/5.6 rationale). traefik.io/v1alpha1 (v3) — the old containo.us API silently fails.

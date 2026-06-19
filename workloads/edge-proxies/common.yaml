@@ -1,10 +1,10 @@
 # Story 5.8 (AC6b) — shared bits reused by every host route in this namespace.
 #
-# ServersTransport `insecure-backend`: proxmox (8006) presents a SELF-SIGNED cert on its
-# management UI (openwrt turned out plain http per the live NPM conf), so Traefik's default backend-TLS verification would 502 them. insecureSkipVerify
+# ServersTransport `insecure-backend`: proxmox (https 8006) presents a SELF-SIGNED cert on its
+# management UI, so Traefik's default backend-TLS verification would 502 it. insecureSkipVerify
 # trusts the backend without validating its cert — acceptable because the hop is LAN-internal
 # (Traefik -> .x) and the PUBLIC edge cert (browser-trusted, per-host Certificate) is unaffected.
-# Only the https routes attach this; the http backends (jellyfin/immich/kvm) don't reference it.
+# Only proxmox attaches this; the plain-http backends (jellyfin/immich/kvm/openwrt) don't reference it.
 apiVersion: traefik.io/v1alpha1
 kind: ServersTransport
 metadata:

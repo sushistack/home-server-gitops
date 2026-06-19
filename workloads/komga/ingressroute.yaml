@@ -5,8 +5,9 @@
 #   suwayomi = INTERNAL ${SECRET:DOMAIN_SUWAYOMI} (NPM 17.conf comics-admin.eli.kr -> .30:4567, with
 #                       `allow 10.0.0.0/24; allow 10.8.0.0/24; deny all`). Preserved by NO cloudflared
 #                       tunnel rule + LAN-only OpenWrt DNS override -> the node. The internet has NO route
-#                       to the k3s suwayomi (the wildcard *.eli.kr still hits NPM, whose now-dead .30:4567
-#                       just 502s). The cert still issues (DNS-01). 🔴 ipAllowList is NOT used and would
+#                       to the k3s suwayomi (the wildcard *.eli.kr now points at Traefik (NPM retired in
+#                       5.8) which default-denies unknown hosts → 404). The cert still issues (DNS-01).
+#                       🔴 ipAllowList is NOT used and would
 #                       be WRONG here: cloudflared egresses to the origin FROM a LAN IP (10.0.0.20), so a
 #                       `10.0.0.0/24` allow would ADMIT internet-via-tunnel traffic — the opposite of
 #                       internal-only. "No tunnel rule + LAN-only DNS" is the only correct gate.
