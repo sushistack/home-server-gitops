@@ -58,6 +58,7 @@ by the [`adr-link-check`](.github/workflows/adr-link-check.yml) CI gate.
 - [ADR-0010 — n8n cutover: write-freeze + parallel run, encryption key sealed explicitly](docs/adr/ADR-0010-n8n-write-freeze-cutover.md)
 
 One-line decision log: [`docs/DECISIONS.md`](docs/DECISIONS.md).
+Live-only traps the ADRs don't cover: [`docs/operational-gotchas.md`](docs/operational-gotchas.md).
 
 The **3-line rule:** an upgrade is a PR → one component at a time → app health green
 before the next; rollback is `git revert` + reconcile — never an out-of-band
