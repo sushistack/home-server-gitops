@@ -60,8 +60,8 @@ only on the host (off-repo).
   ApplicationSet selfHeal/empty-init race — `automated{selfHeal}` can't be paused on an appset-managed
   Application) → ArgoCD app generated (commit e5b5a08) → **verify-before-flip: db.sqlite3 sha256
   byte-identical to source, users 1==1, ciphers 515==515, /alive+web 200, vaultwarden-tls LE-prod
-  Ready** → flip CF tunnel (`vault.eli.kr→10.0.0.101:443` before `*.eli.kr→NPM`, API PUT) + OpenWrt
-  LAN override (10.0.0.20→10.0.0.101, uci). Public (CF edge) + LAN both 200. **Window ≈6 min ≤10,
+  Ready** → flip CF tunnel (`vault.${SECRET:DOMAIN_ZONE}→${SECRET:IP_K3S}:443` before `*.${SECRET:DOMAIN_ZONE}→NPM`, API PUT) + OpenWrt
+  LAN override (${SECRET:IP_COMPOSE}→${SECRET:IP_K3S}, uci). Public (CF edge) + LAN both 200. **Window ≈6 min ≤10,
   RPO=0.** Backup actor proven (R2 `…/vaultwarden/`) + verified restore in a scratch ns. Compose
   vaultwarden **PARKED** (restarted, localhost 200) as the rollback net; `vaultwarden-backup` left
   stopped so it can't stop the parked container. [ADR-0009](adr/ADR-0009-vaultwarden-critical-last.md),
@@ -74,11 +74,11 @@ only on the host (off-repo).
   polish must not block DONE). **Epic 5 / Phase 3 is optional, post-DONE; Compose is PARKED not retired (retire = Story 5.4)
   — the dual-run rollback net stays until then.**
 - 2026-06-19 | ⚠️ **Found (operator follow-up): `argocd-render-tokens` Secret has a pre-existing
-  newline-corruption** — `CLOUDFLARE_DNS01_TOKEN`'s value runs into `DOMAIN_NTFY=notify.eli.kr` with no
+  newline-corruption** — `CLOUDFLARE_DNS01_TOKEN`'s value runs into `DOMAIN_NTFY=notify.${SECRET:DOMAIN_ZONE}` with no
   separator (a clean `DOMAIN_NTFY` line also exists below it). Harmless to rendering (cert-manager uses
   its own `cloudflare-dns01-token` Secret in ns cert-manager) but it pollutes that token value. Left
   untouched during the vault cutover (didn't want to risk the DNS token); operator should re-split the
-  line. `DOMAIN_VAULTWARDEN=vault.eli.kr` was appended cleanly below it.
+  line. `DOMAIN_VAULTWARDEN=vault.${SECRET:DOMAIN_ZONE}` was appended cleanly below it.
 
 ## Anytype cutover — non-HTTP TCP/UDP edge + file-class BadgerDB quiesce (Story 4.4)
 
@@ -124,9 +124,9 @@ only on the host (off-repo).
   even with no user action — background workers write, so the authoritative copy is taken
   post-quiesce), re-ingested the fresh consistent copy, **0-loss verified byte-identical**
   (`db.db` md5 `2b32ba8b…` == live; `bridge.sqlite` `f07fc0b2…` == live; 66 bookmarks served).
-  Public flip: CF tunnel ingress edited via API (`keep → https://10.0.0.101:443` inserted before the
-  `*.eli.kr→NPM` wildcard) → 200 from outside. LAN flip: OpenWrt local-DNS override (NEW entry
-  `keep → 10.0.0.101`, draw pattern) → direct path 200 with the LE-prod `keep.eli.kr` cert. Compose
+  Public flip: CF tunnel ingress edited via API (`keep → https://${SECRET:IP_K3S}:443` inserted before the
+  `*.${SECRET:DOMAIN_ZONE}→NPM` wildcard) → 200 from outside. LAN flip: OpenWrt local-DNS override (NEW entry
+  `keep → ${SECRET:IP_K3S}`, draw pattern) → direct path 200 with the LE-prod `keep.${SECRET:DOMAIN_ZONE}` cert. Compose
   karakeep (5 containers) **PARKED** (all exited; rollback = remove the CF rule + start Compose).
   ArgoCD adopts on git push. | [runbook](runbooks/karakeep.md)
 
@@ -145,9 +145,9 @@ only on the host (off-repo).
   entries==dump); **backup actor proven** (`pg_dump`→`r2:homelab-k3s-services-backup/miniflux/`,
   through the default-deny NetworkPolicy); all 3 nodes serve `${SECRET:DOMAIN_RSS}` at :443 with the
   prod cert (HTTP 200). **CUTOVER COMPLETE — public + LAN flipped.** Public: CF tunnel ingress
-  edited via API (`rss → https://10.0.0.101:443` inserted before the `*.eli.kr→NPM` wildcard;
+  edited via API (`rss → https://${SECRET:IP_K3S}:443` inserted before the `*.${SECRET:DOMAIN_ZONE}→NPM` wildcard;
   cloudflared first-match → k3s), verified 200 from outside. LAN: OpenWrt local-DNS override
-  `rss 10.0.0.20→10.0.0.101` (draw pattern). **Rollback rehearsed** at the tunnel (remove rule →
+  `rss ${SECRET:IP_COMPOSE}→${SECRET:IP_K3S}` (draw pattern). **Rollback rehearsed** at the tunnel (remove rule →
   NPM/Compose → re-add, 200 throughout). Final 0-loss: k3s `9|1|566|51` == Compose. Compose
   miniflux + miniflux-db **PARKED** (still live = the data fallback; operator retired the NPM proxy
   host for rss, so the tunnel-only rollback layer is intentionally dropped — full decommission rides
@@ -178,8 +178,8 @@ only on the host (off-repo).
   DECRYPT** on k3s (n8n export:credentials --decrypted: SSH key, DeepSeek/Discord/ntfy/Anytype/
   RocketChat — encryption key migrated) → backup actor proven (n8n-2026-…​tar.gz → R2
   `homelab-k3s-services-backup/n8n/`) → **verified restore** in a scratch ns (6 creds decrypt + 25
-  workflows load from the R2 tar). Public flip: CF tunnel ingress `n8n.eli.kr → https://10.0.0.101:443`
-  inserted before `*.eli.kr→NPM`; LAN: OpenWrt override `n8n 10.0.0.20→10.0.0.101`; `n8n.eli.kr`=200
+  workflows load from the R2 tar). Public flip: CF tunnel ingress `n8n.${SECRET:DOMAIN_ZONE} → https://${SECRET:IP_K3S}:443`
+  inserted before `*.${SECRET:DOMAIN_ZONE}→NPM`; LAN: OpenWrt override `n8n ${SECRET:IP_COMPOSE}→${SECRET:IP_K3S}`; `n8n.${SECRET:DOMAIN_ZONE}`=200
   with the LE-prod `n8n-tls` cert. **🔴 Live key differed from a stale local working-copy key —
   re-sealed from the LIVE host; also sealed the workflow `$env.*` bag (ANYTYPE_BEARER etc.) the live
   container actually had.** Compose n8n + n8n-backup **PARKED** (Exited 0, rollback = flip cloudflared
