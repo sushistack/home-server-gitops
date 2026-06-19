@@ -94,7 +94,7 @@ workloads:
     image: excalidraw/excalidraw@sha256:f7ee194addd607bf831d2af0f0a34463dd4225e426cf35199ef0b12a803398e9
   ytdlp-api:
     manifest: workloads/ytdlp-api/deployment.yaml
-    image: nbr23/youtube-dl-server@sha256:5b4cc20efbb277a1c8819c4618c3b57c56e68d39534760c3b9b768ef20aed5ce
+    image: nbr23/youtube-dl-server@sha256:b96cd888162d088b5a2e011b03fca1c78c9bbf2e5ed558325330a8420c66af5a
   ntfy:
     manifest: workloads/ntfy/deployment.yaml
     image: binwiederhier/ntfy@sha256:f8a9b104313b87cc24ae4f775f39e6328205b57dff6ede3eaf098a91e5d79f59

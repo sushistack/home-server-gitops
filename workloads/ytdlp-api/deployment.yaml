@@ -23,7 +23,7 @@ spec:
           #   docker buildx imagetools inspect nbr23/youtube-dl-server:latest
           # Upgrade = re-inspect, bump this digest via PR (GitOps-revertible). yt-dlp's YouTube
           # extractor rots fast — a stale pin = silent extractor failure (runbook common-failure).
-          image: nbr23/youtube-dl-server@sha256:5b4cc20efbb277a1c8819c4618c3b57c56e68d39534760c3b9b768ef20aed5ce
+          image: nbr23/youtube-dl-server@sha256:b96cd888162d088b5a2e011b03fca1c78c9bbf2e5ed558325330a8420c66af5a
           ports:
             - containerPort: 8080
           env:
