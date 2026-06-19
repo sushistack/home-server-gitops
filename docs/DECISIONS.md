@@ -2,6 +2,47 @@
 
 Running log of load-bearing decisions. One line each; link the story.
 
+## Standalone application LXCs consolidated onto k3s (Story 5.6, Epic 5 / Phase 3 — opportunistic)
+
+- 2026-06-19 | **Opportunistic, post-DONE cleanup — NOT a gate, NOT a Compose cutover.** These guests
+  (#203 komga+Suwayomi, #204 calibre-web, #205 trade-monitor) were NEVER in the Compose stack (LXC
+  #202), so none of the Epic 4 write-freeze / dual-run / R2-actor machinery applies to *moving the
+  apps* — only the GitOps *shapes* (ApplicationSet, golden-path Deployment+ingress, render-CMP tokens,
+  SQLite Recreate+startupProbe) are reused. Data migrates by plain copy (small config DBs) or stays in
+  place (90G manga via NFS). Epic 5 stayed optional; this did not gate completion. | Story 5.6
+- 2026-06-19 | **trade-monitor → k8s `CronJob`** (`* * * * *`, `Asia/Seoul`, Forbid, `activeDeadline
+  55s` mirroring the LXC `timeout 55`). Stateless: ConfigMap (no PVC), no Service/ingress/SealedSecret,
+  outbound-only (Binance + Yahoo + LaMetric internet + LAN displays 10.0.0.200–206). Image built in
+  the **trade.monitor repo** (its own Dockerfile + GHCR CI — `home.server` is not touched, Reconciliation
+  3), consumed by digest. Pod CoreDNS can't resolve the dnsmasq lease names, so the ConfigMap rewrites
+  `crypto-*`/`ulanzi`/`stock-snp500` → static IPs (Reconciliation 4). #205 decommissioned after parity. | Story 5.6
+- 2026-06-19 | **90G manga library stays OFF Longhorn — #203 repurposed into the `storage` NFS server
+  (ZERO copy).** Longhorn's synchronous 3× replication + tight node disk (memory `longhorn-node-storage`)
+  make 90G a bad fit; MinIO/s3fs was rejected (FUSE shim + still needs the disk). #203's apps are
+  stripped, `nfs-kernel-server` exports `/mnt/manga` to the 3 k3s nodes, the guest is renamed
+  `komga`→`storage` (IP 10.0.0.30 MAC-bound, unchanged). komga mounts it **read-only**, Suwayomi
+  **read-write** via a static NFS PV (RWX). Plane 0 stays clean (NFS isolated in a guest, not on the
+  Proxmox host). Cost accepted: #203/NFS is a new SPOF for komga/suwayomi — fine, both are below the
+  DONE/NFR alerting bar. (Reconciliation 6) | Story 5.6
+- 2026-06-19 | **komga + Suwayomi = two Deployments, one namespace, one shared library** (Reconciliation
+  5 — #203 ran BOTH, not just komga). Config DBs (komga `database.sqlite`/`tasks.sqlite`, Suwayomi data
+  dir) on small Longhorn PVCs (reading progress — precious, tiny); the library on NFS. **calibre's ~4G
+  library goes on Longhorn** (Reconciliation 7 — too small to hit the bottleneck; lets #204 be FULLY
+  decommissioned, no NFS dependency). Exposure PRESERVED per app: komga PUBLIC (`comics.*`), Suwayomi
+  INTERNAL (`comics-admin.*`), calibre INTERNAL (new host) — internal-only = no CF tunnel rule + LAN-only
+  DNS override (no ipAllowList middleware needed). No SealedSecret (these apps need no API key). | Story 5.6
+- 2026-06-19 | **jellyfin (#200) / immich (#201) EXPLICITLY EXCLUDED** (AC3). They share the host iGPU
+  via LXC device passthrough (`/dev/dri/renderD128`+`card0`), which a k3s **VM** node cannot replicate
+  without exclusive VFIO (steals the iGPU from the other guest + host), and they hold large local media
+  → moving them forces CPU-only transcoding + Longhorn-bound media I/O = a real regression for no GitOps
+  payoff. They remain dedicated LXCs. | Story 5.6
+- 2026-06-19 | **High-blast-radius touch points (the two Plane-0-adjacent edits), operator-gated:** (1)
+  the NFS server config on the repurposed #203 guest, (2) the OpenWrt static-lease rename `komga`→`storage`
+  + the LAN DNS overrides for the new hosts (`configs/openwrt/`). Both follow the high-blast-radius
+  procedure (`--check --diff`, show diff, approve, state rollback). The OpenWrt edit was STAGED in the
+  runbook (not applied) to avoid racing parallel Epic 5 edits to the same file. Proxmox host config,
+  OpenWrt routing/DoH, Oracle/WireGuard, cloudflared are otherwise untouched (AC4). | Story 5.6
+
 ## Compose stack RETIRED — k3s is the sole production path (Story 5.4, Epic 5 / Phase 3)
 
 - 2026-06-19 | **The legacy Compose application stack was retired (decommissioned, not merely
@@ -10,8 +51,13 @@ Running log of load-bearing decisions. One line each; link the story.
   `home.server` `configs/docker/docker-compose.yml`, from the CD path (`.github/workflows/deploy.yml`
   + `.github/scripts/deploy.js` no longer materialize their `.env*` or `docker compose up` the app
   stack), and the app/backup `.env` templates (`.env.apps.template`, `.env.backup.template`) were
-  deleted so the Compose `.env` secret origin **ceases to exist**. The live containers on
-  `${SECRET:IP_COMPOSE}` were brought down by the operator (`docker compose down`). | Story 5.4
+  deleted so the Compose `.env` secret origin **ceases to exist**, and the 34 orphan app `ENV_*`
+  GitHub repo secrets were deleted (only `ENV_TZ`/`ENV_HOMEPAGE_ALLOWED_HOSTS`/`ENV_CLOUDFLARE_TUNNEL_TOKEN`
+  + the `VW_*`/`BW_*` cloud-sync secrets remain). The live app containers on `${SECRET:IP_COMPOSE}` were
+  removed by **explicit `docker stop`→`docker rm` per container name** — NOT `docker compose down`, since
+  the app + infra share one compose project (`home-network`) and a file-scoped `down` would have taken
+  cloudflared (Plane 0) with it. Volumes kept (cold copy); infra stack untouched + healthy; every public
+  host verified serving from k3s. | Story 5.4
 - 2026-06-19 | **Preconditions met (HARD GATE).** Project **DONE** declared 2026-06-19 (Story 4.8 —
   all migrated services live on k3s, ArgoCD `Synced`/`Healthy`, Gate 0 + per-service verified
   restores, NFR15a alerting proven; see [DONE.md](DONE.md)). **k3s trust** certified by the operator
