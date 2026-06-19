@@ -43,8 +43,8 @@ spec:
         - name: semaphore
           # semaphoreui/semaphore. CONFIRM the current stable tag at install (this is a plausible
           # placeholder) + SWAP TO @sha256 digest at cutover (AR29):
-          #   docker buildx imagetools inspect semaphoreui/semaphore:v2.16.21
-          image: semaphoreui/semaphore:v2.16.21
+          #   docker buildx imagetools inspect semaphoreui/semaphore:v2.18.12
+          image: semaphoreui/semaphore:v2.18.12
           ports:
             - containerPort: 3000
           env:

@@ -53,10 +53,11 @@ spec:
                 configMapKeyRef:
                   name: beszel-agent-key
                   key: KEY
-          # tcpSocket on the LISTEN port (repo convention — excalidraw/anytype/karakeep). The agent
-          # binds 45876 regardless of whether KEY matches the hub, so this reflects "binary is up" — the
-          # ONLY health signal a hostNetwork DaemonSet otherwise has (a node-level bind conflict would
-          # otherwise crash-loop invisibly to ArgoCD).
+          # tcpSocket on the LISTEN port (repo convention — excalidraw/anytype/karakeep). Once KEY is a
+          # valid hub public key the agent binds 45876, so this reflects "agent is up and listening" —
+          # the ONLY health signal a hostNetwork DaemonSet otherwise has. NB on 0.18 a bad/placeholder
+          # KEY crash-loops the agent BEFORE it binds (it parses the key at startup), so this probe also
+          # surfaces a wrong-key configmap, not just a node-level bind conflict.
           readinessProbe:
             tcpSocket:
               port: 45876

@@ -1,14 +1,15 @@
 # Story 5.7 — the Beszel agent's KEY is the HUB's PUBLIC key — a ConfigMap, NOT a SealedSecret
-# (don't reflexively seal a public key, AC3b). Chicken-and-egg: the hub generates this key on first
-# boot, so it is unknown until the hub runs. The operator fills it post-deploy from the hub UI
-# ("Add System" shows the public key + install command), then restarts the agent DaemonSet:
-#   kubectl -n beszel rollout restart daemonset/beszel-agent
-# (Runbook day2-tooling.md.) Until filled, agents start (bind :45876) but the hub rejects them —
-# harmless. This is Beszel's SSH connection mode (hub dials agent); a WebSocket-mode version would
+# (don't reflexively seal a public key, AC3b). Chicken-and-egg: the hub generates this keypair on first
+# boot (stored in its PVC at /beszel_data/id_ed25519), so the public half is unknown until the hub runs.
+# 🔴 On Beszel 0.18 the agent CRASH-LOOPS on an unparseable KEY (it parses authorized keys at startup) —
+# it does NOT "start and idle", so this MUST hold the real hub public key. Filled 2026-06-19 by deriving
+# the pubkey from the hub's PVC key (scale hub→0, read PVC, ssh-keygen -y, scale back). After any change,
+# restart the agents:  kubectl -n beszel rollout restart daemonset/beszel-agent
+# This is Beszel's SSH connection mode (hub dials agent at node-IP:45876); a WebSocket-mode setup would
 # instead need a per-system TOKEN + HUB_URL on the agent, not this public KEY (daemonset-agent.yaml).
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: beszel-agent-key
 data:
-  KEY: "ssh-ed25519 PLACEHOLDER_HUB_PUBLIC_KEY"   # operator replaces from the hub UI
+  KEY: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINWEtsmihIfFNqV8abX3+tm2JTDJpM/ruX+LvRO3i5rH"
