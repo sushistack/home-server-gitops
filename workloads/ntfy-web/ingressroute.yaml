@@ -1,0 +1,45 @@
+# Public route for the ntfy web UI. Same shape as workloads/ntfy: web->websecure (TLS serve) +
+# HTTP 301->HTTPS. Host tokenized (${SECRET:DOMAIN_NTFY_WEB}); render CMP substitutes at sync time.
+# CUTOVER: the cloudflared tunnel origin for this host (notify.<zone>) must point at Traefik
+# (https://<node>:443, originServerName=${SECRET:DOMAIN_NTFY_WEB}) — see cutover runbook.
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ntfy-web-redirect-https
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ntfy-web
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`${SECRET:DOMAIN_NTFY_WEB}`)
+      kind: Rule
+      services:
+        - name: ntfy-web
+          port: 80
+  tls:
+    secretName: ntfy-web-tls
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ntfy-web-redirect
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`${SECRET:DOMAIN_NTFY_WEB}`)
+      kind: Rule
+      middlewares:
+        - name: ntfy-web-redirect-https
+      services:
+        - name: ntfy-web   # required by the IngressRoute schema; middleware redirects before it is hit
+          port: 80

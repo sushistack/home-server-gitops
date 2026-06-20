@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ntfy-web
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ntfy-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80

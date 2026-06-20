@@ -1,0 +1,6 @@
+# Redesigned ntfy web UI (sister of the ntfy server in ns `ntfy`). Stateless static SPA
+# served by nginx; talks to the ntfy API at ${SECRET:DOMAIN_NTFY} cross-origin. No volume, no backup.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ntfy-web

@@ -1,0 +1,14 @@
+# Per-host production TLS for the ntfy web UI (same pattern as workloads/ntfy): cert-manager issues
+# a browser-trusted cert for ${SECRET:DOMAIN_NTFY_WEB} from letsencrypt-prod into ntfy-web-tls in
+# THIS namespace, which the websecure IngressRoute serves. Renewal is automatic.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ntfy-web-tls
+spec:
+  secretName: ntfy-web-tls
+  dnsNames:
+    - "${SECRET:DOMAIN_NTFY_WEB}"
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer

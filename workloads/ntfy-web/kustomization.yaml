@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingressroute.yaml      # web->websecure (TLS serve + HTTP->HTTPS redirect); host tokenized
+  - certificate.yaml       # per-host cert-manager Certificate -> ntfy-web-tls (letsencrypt-prod)
+
+# No PVC, no ConfigMap, no backup CronJob — stateless static UI (config is baked into the image).
+
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/name: ntfy-web
+      app.kubernetes.io/instance: ntfy-web
+      app.kubernetes.io/part-of: ntfy
+      app.kubernetes.io/managed-by: argocd
+      app.kubernetes.io/component: web

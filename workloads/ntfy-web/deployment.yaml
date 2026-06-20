@@ -1,0 +1,54 @@
+# Stateless static web app (nginx). Same disposable shape as excalidraw: replicas:2 +
+# RollingUpdate maxUnavailable:0 so a bad image is held back with no downtime; recovery is `git revert`.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ntfy-web
+spec:
+  replicas: 2
+  progressDeadlineSeconds: 120
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+  # Hand-written selector (kept out of kustomize labels) so it stays immutable across re-applies.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ntfy-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ntfy-web
+    spec:
+      containers:
+        - name: ntfy-web
+          # Built + pushed by the ntfy-web repo CI (.github/workflows/docker-publish.yml).
+          # Multi-arch index digest captured 2026-06-20 via
+          #   docker buildx imagetools inspect ghcr.io/sushistack/ntfy-web:latest
+          # Upgrade = re-inspect, bump this digest via PR (GitOps-revertible). NEVER :latest (AR29).
+          image: ghcr.io/sushistack/ntfy-web@sha256:6bce580c7b4f2f339033e2d87b190d868e913674ffba0e1ef17bf590bbbcaf33
+          ports:
+            - containerPort: 80
+          env:
+            - name: TZ
+              value: Asia/Seoul
+          resources:
+            requests:
+              cpu: 100m
+              memory: 32Mi
+            limits:
+              memory: 128Mi   # nginx serving static files is tiny. Memory limit only (no cpu limit).
+          # nginx opens :80 immediately; TCP-listen gate matches the golden path.
+          startupProbe:
+            tcpSocket:
+              port: 80
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: 80
+          livenessProbe:
+            tcpSocket:
+              port: 80
+      # If the GHCR package is private, add an imagePullSecret here (and seal it).
+      # Simplest: make ghcr.io/sushistack/ntfy-web a PUBLIC package -> no secret needed.
