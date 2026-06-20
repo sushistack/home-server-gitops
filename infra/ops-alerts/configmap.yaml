@@ -6,6 +6,11 @@
 #   state) — acceptable for a 4-condition bus-factor-1 homelab (a real condition SHOULD keep nagging).
 #   Phase 3 / NFR15b can replace this with kube-prometheus-stack + an Alertmanager ntfy receiver if
 #   alert volume ever justifies a real pipeline.
+#
+# Message format: STRUCTURED KV CARDS (docs/ntfy-custom-message-format.md). Each alert publishes with
+# tag `card` + a JSON body `{"type":"kv","rows":[...]}` so the redesigned ntfy-web/Android clients
+# render a key-value table (status dots, inline meters). The title (plain header) still carries the
+# gist, so a client without card support degrades to a readable title + raw JSON body, never silence.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -38,23 +43,25 @@ data:
       echo "FATAL: kube-apiserver unreachable — check ops-alerts egress NetworkPolicy (apiserver allow)"; exit 1; }
 
     now=$(date -u +%s)
-    NL="$(printf '\n')"   # ntfy renders \n as a line break — bodies are "<what> ${NL}→ <action>"
 
-    notify() {  # $1 topic, $2 title, $3 body  — failure to publish is logged, never aborts the poll
-      # JSON publish (not X-Title/-d headers): HTTP headers are latin-1, so the emoji in the
-      # title/body would mojibake. jq builds the payload (safe escaping) — already a dependency.
-      payload=$(jq -nc --arg topic "$1" --arg t "$2" --arg m "$3" \
-        '{topic:$topic, title:$t, message:$m, priority:5}') \
-        || { echo "ERROR: payload build failed [$2] $3"; return 0; }   # guard: under set -eu a bare $(…) failure aborts the whole poll
+    notify() {  # $1 topic, $2 title, $3 rows-JSON (a jq array of {key,value,status?,meter?,icon?})
+      # Structured KV card: tag `card` + body = JSON spec (docs/ntfy-custom-message-format.md §2.1).
+      # JSON publish (not X-Title/-d headers): HTTP headers are latin-1, so emoji in the title would
+      # mojibake. jq builds the payload (safe escaping); `message` is the spec STRINGIFIED (the body is
+      # text that must PARSE to JSON). Failure to publish is logged, never aborts the poll.
+      payload=$(jq -nc --arg topic "$1" --arg t "$2" --argjson rows "$3" \
+        '{topic:$topic, title:$t, priority:5, tags:["card"],
+          message: ({type:"kv", rows:$rows} | tojson)}') \
+        || { echo "ERROR: payload build failed [$2]"; return 0; }   # guard: under set -eu a bare $(…) failure aborts the whole poll
       # POST to the ntfy ROOT url (topic is in the JSON body, not the path). Content-Type makes the
       # JSON-publish contract explicit instead of relying on ntfy's lenient root-url body sniffing.
       if curl -fsS --max-time 10 \
            -H "Authorization: Bearer ${NTFY_TOKEN}" \
            -H "Content-Type: application/json" \
            -d "$payload" "${NTFY_URL}" >/dev/null; then
-        echo "ALERT sent [$1] [$2] $3"
+        echo "ALERT sent [$1] [$2]"
       else
-        echo "ERROR: ntfy publish failed [$1] [$2] $3"
+        echo "ERROR: ntfy publish failed [$1] [$2]"
       fi
     }
 
@@ -65,7 +72,12 @@ data:
       | select(($exp - $now) <= ($warn * 86400))
       | "\(.metadata.namespace)/\(.metadata.name)\t\(.status.notAfter)"' \
     | while IFS="$(printf '\t')" read -r cert exp; do
-        notify "$NTFY_TOPIC_CRITICAL" "🔐 Certificate expiring: $cert" "Expires $exp — within ${CERT_WARN_DAYS}d, so auto-renew is likely failing. ${NL}→ kubectl describe certificate, then inspect the Order / Challenge (usually DNS-01 or issuer)."
+        rows=$(jq -nc --arg cert "$cert" --arg exp "$exp" --arg w "$CERT_WARN_DAYS" '[
+          {key:"Certificate", value:$cert, icon:"status"},
+          {key:"Expires", value:$exp, status:"error"},
+          {key:"Window", value:"\($w)d"},
+          {key:"Fix", value:"describe certificate, inspect the Order/Challenge (DNS-01/issuer)", icon:"exit"}]') || rows='[]'
+        notify "$NTFY_TOPIC_CRITICAL" "🔐 Certificate expiring: $cert" "$rows"
       done
 
     # (b) Longhorn node disk >= 80%  (usage = 1 - storageAvailable/storageMaximum)
@@ -77,7 +89,13 @@ data:
       | select($used >= $pct)
       | "\($node)\t\(.key)\t\($used | floor)"' \
     | while IFS="$(printf '\t')" read -r node disk used; do
-        notify "$NTFY_TOPIC_CRITICAL" "💾 Storage low: $node" "Longhorn disk $disk is ${used}% full (threshold ${DISK_PCT}%). ${NL}→ Free space or expand the disk in the Longhorn UI."
+        rows=$(jq -nc --arg node "$node" --arg disk "$disk" --argjson used "$used" --arg thr "$DISK_PCT" '[
+          {key:"Node", value:$node, icon:"host"},
+          {key:"Disk", value:$disk, icon:"disk"},
+          {key:"Usage", value:"\($used)%", meter:$used},
+          {key:"Threshold", value:"\($thr)%"},
+          {key:"Fix", value:"Free space or expand the disk in the Longhorn UI", icon:"exit"}]') || rows='[]'
+        notify "$NTFY_TOPIC_CRITICAL" "💾 Storage low: $node" "$rows"
       done
 
     # Stateful namespaces = those carrying a <service>-backup CronJob (the Story 4.1 backup-actor
@@ -95,7 +113,12 @@ data:
         .items[] | select((.status.readyReplicas // 0) < (.spec.replicas // 0))
         | "\(.kind)/\(.metadata.name)\t\(.status.readyReplicas // 0)\t\(.spec.replicas // 0)"' \
       | while IFS="$(printf '\t')" read -r wl ready desired; do
-          notify "$NTFY_TOPIC_CRITICAL" "🔴 Service down: $ns/$wl" "Ready ${ready}/${desired} — stateful workload unhealthy. ${NL}→ kubectl -n $ns get pods, then describe / logs the not-ready pod."
+          rows=$(jq -nc --arg wl "$wl" --arg ns "$ns" --arg ready "$ready" --arg desired "$desired" '[
+            {key:"Workload", value:$wl, icon:"service"},
+            {key:"Namespace", value:$ns},
+            {key:"Ready", value:"\($ready)/\($desired)", status:"error"},
+            {key:"Fix", value:"get pods, then describe / logs the not-ready pod", icon:"exit"}]') || rows='[]'
+          notify "$NTFY_TOPIC_CRITICAL" "🔴 Service down: $ns/$wl" "$rows"
         done
     done
 
@@ -106,7 +129,11 @@ data:
       .items[] | select((.status.failed // 0) >= 1) | select(.metadata.name | test("-(backup|restore)"))
       | "\(.metadata.namespace)/\(.metadata.name)\t\(.status.failed)"' \
     | while IFS="$(printf '\t')" read -r job failed; do
-        notify "$NTFY_TOPIC_CRITICAL" "❌ Backup/restore failed: $job" "Job $job failed (status.failed=${failed}). ${NL}→ kubectl -n ${job%/*} logs job/${job#*/}; re-run after fixing creds / R2 / disk."
+        rows=$(jq -nc --arg job "$job" --arg failed "$failed" '[
+          {key:"Job", value:$job, icon:"status"},
+          {key:"Failed", value:$failed, status:"error", icon:"error"},
+          {key:"Fix", value:"kubectl logs job/<name>; re-run after fixing creds / R2 / disk", icon:"exit"}]') || rows='[]'
+        notify "$NTFY_TOPIC_CRITICAL" "❌ Backup/restore failed: $job" "$rows"
       done
 
     # ---- NFR15b: version/config drift (Story 5.1) ------------------------------------------------
@@ -129,9 +156,14 @@ data:
           (["Degraded","Missing","Unknown"] | index($health))
           or ($sync != "Synced" and ($ig | index($app) | not))
         )
-      | "\($app)\tsync=\($sync) health=\($health)"' \
-    | while IFS="$(printf '\t')" read -r app status; do
-        notify "$NTFY_TOPIC_OPS" "🌥️ ArgoCD drift: $app" "$app is $status — live state differs from the Git pin. ${NL}→ argocd app diff $app: if the live change is wrong, git revert + argocd app sync; if intended, update Git to match."
+      | "\($app)\t\($sync)\t\($health)"' \
+    | while IFS="$(printf '\t')" read -r app sync health; do
+        rows=$(jq -nc --arg app "$app" --arg sync "$sync" --arg health "$health" '[
+          {key:"App", value:$app, icon:"status"},
+          {key:"Sync", value:$sync, status:(if $sync=="Synced" then "ok" else "error" end)},
+          {key:"Health", value:$health, status:(if $health=="Healthy" then "ok" else "error" end)},
+          {key:"Fix", value:"argocd app diff: revert+sync if wrong, else update Git to match", icon:"exit"}]') || rows='[]'
+        notify "$NTFY_TOPIC_OPS" "🌥️ ArgoCD drift: $app" "$rows"
       done
 
     # (f) k3s node version drift + (g) node NotReady — ONE nodes read, two branches (no extra RBAC).
@@ -144,13 +176,22 @@ data:
       | .metadata.name as $node
       | (.status.nodeInfo.kubeletVersion) as $ver
       | ([.status.conditions[] | select(.type=="Ready") | .status][0] // "Unknown") as $ready
-      | (if ($pin != "" and $ver != $pin) then "\($node)\tversion\t\($ver) (pin \($pin))" else empty end),
-        (if $ready != "True" then "\($node)\tnotready\tReady=\($ready)" else empty end)' \
-    | while IFS="$(printf '\t')" read -r node kind detail; do
+      | (if ($pin != "" and $ver != $pin) then "\($node)\tversion\t\($ver)\t\($pin)" else empty end),
+        (if $ready != "True" then "\($node)\tnotready\tReady=\($ready)\t" else empty end)' \
+    | while IFS="$(printf '\t')" read -r node kind detail pin; do
         if [ "$kind" = "version" ]; then
-          notify "$NTFY_TOPIC_OPS" "⬆️ k3s version drift: $node" "kubelet is $detail — node was hand-upgraded. ${NL}→ Roll back to the pin, or bump versions.yaml (and K3S_PINNED_VERSION) if the upgrade is intended."
+          rows=$(jq -nc --arg node "$node" --arg ver "$detail" --arg pin "$pin" '[
+            {key:"Node", value:$node, icon:"host"},
+            {key:"kubelet", value:$ver, status:"warn", icon:"version"},
+            {key:"Pinned", value:$pin, icon:"version"},
+            {key:"Fix", value:"Roll back to the pin, or bump versions.yaml + K3S_PINNED_VERSION if intended", icon:"exit"}]') || rows='[]'
+          notify "$NTFY_TOPIC_OPS" "⬆️ k3s version drift: $node" "$rows"
         else
-          notify "$NTFY_TOPIC_OPS" "🔴 Node NotReady: $node" "$node is $detail — node down (single-host SPOF signal). ${NL}→ kubectl describe node $node and check the host (Proxmox VM up? kubelet running?)."
+          rows=$(jq -nc --arg node "$node" --arg state "$detail" '[
+            {key:"Node", value:$node, icon:"host"},
+            {key:"State", value:$state, status:"error"},
+            {key:"Fix", value:"describe node, check the host (Proxmox VM up? kubelet running?)", icon:"exit"}]') || rows='[]'
+          notify "$NTFY_TOPIC_OPS" "🔴 Node NotReady: $node" "$rows"
         fi
       done
 
@@ -180,14 +221,24 @@ data:
         # no-dedupe contract as the rest of this poller). lsd exits non-zero on error but 0 on empty,
         # so it distinguishes "can't reach R2" from "bucket is empty".
         if ! rclone lsd "r2:$SVC_BUCKET" >/dev/null 2>&1; then
-          notify "$NTFY_TOPIC_OPS" "🔌 R2 unreachable" "ops-alerter can't reach R2 (r2:$SVC_BUCKET) — skipping capacity / freshness / rotation checks (backup monitoring is blind meanwhile). ${NL}→ Check R2 credentials / network / endpoint."
+          rows=$(jq -nc --arg b "$SVC_BUCKET" '[
+            {key:"Target", value:"r2:\($b)", icon:"net"},
+            {key:"State", value:"unreachable", status:"error"},
+            {key:"Impact", value:"capacity / freshness / rotation checks skipped (backup monitoring blind)"},
+            {key:"Fix", value:"Check R2 credentials / network / endpoint", icon:"exit"}]') || rows='[]'
+          notify "$NTFY_TOPIC_OPS" "🔌 R2 unreachable" "$rows"
         else
           # (a) capacity — total bytes per bucket vs threshold
           for b in "$SVC_BUCKET" "$LH_BUCKET"; do
             bytes=$(rclone size "r2:$b" --json 2>/dev/null | jq -r '.bytes // 0' 2>/dev/null || echo 0)
             gb=$(( bytes / 1073741824 ))
             if [ "$gb" -ge "$R2_THRESHOLD_GB" ]; then
-              notify "$NTFY_TOPIC_CRITICAL" "💽 R2 capacity: $b" "Bucket r2:$b is ${gb}GiB (threshold ${R2_THRESHOLD_GB}GiB; free tier ~10GB). ${NL}→ Prune old backups or raise the limit."
+              rows=$(jq -nc --arg b "$b" --argjson gb "$gb" --arg thr "$R2_THRESHOLD_GB" '[
+                {key:"Bucket", value:"r2:\($b)", icon:"disk"},
+                {key:"Size", value:"\($gb)GiB", status:"error"},
+                {key:"Threshold", value:"\($thr)GiB (free tier ~10GB)"},
+                {key:"Fix", value:"Prune old backups or raise the limit", icon:"exit"}]') || rows='[]'
+              notify "$NTFY_TOPIC_CRITICAL" "💽 R2 capacity: $b" "$rows"
             fi
           done
 
@@ -206,14 +257,29 @@ data:
                 ( if ($now - .oldest) > $ret  then "OLD\t\(.svc)\t\((($now-.oldest)/86400)|floor)"  else empty end )' \
           | while IFS="$(printf '\t')" read -r kind svc age; do
               if [ "$kind" = "STALE" ]; then
-                notify "$NTFY_TOPIC_CRITICAL" "🥪 Backup stale: $svc" "r2:$SVC_BUCKET/$svc/ newest object is ${age}h old — the backup actor may have silently stopped (separate from job-failure alerts). ${NL}→ Check the ${svc}-backup CronJob logs."
+                rows=$(jq -nc --arg svc "$svc" --arg age "$age" --arg b "$SVC_BUCKET" '[
+                  {key:"Service", value:$svc, icon:"service"},
+                  {key:"Newest", value:"\($age)h old", status:"error"},
+                  {key:"Path", value:"r2:\($b)/\($svc)/", icon:"disk"},
+                  {key:"Fix", value:"Check the \($svc)-backup CronJob logs (actor may have silently stopped)", icon:"exit"}]') || rows='[]'
+                notify "$NTFY_TOPIC_CRITICAL" "🥪 Backup stale: $svc" "$rows"
               else
-                notify "$NTFY_TOPIC_CRITICAL" "🗑️ Backup not rotating: $svc" "r2:$SVC_BUCKET/$svc/ oldest object is ${age}d old (retention ${R2_RETENTION_DAYS}d exceeded) — rotation (rclone delete) is failing. ${NL}→ Check the rotation logic / permissions."
+                rows=$(jq -nc --arg svc "$svc" --arg age "$age" --arg ret "$R2_RETENTION_DAYS" --arg b "$SVC_BUCKET" '[
+                  {key:"Service", value:$svc, icon:"service"},
+                  {key:"Oldest", value:"\($age)d old", status:"error"},
+                  {key:"Retention", value:"\($ret)d exceeded"},
+                  {key:"Path", value:"r2:\($b)/\($svc)/", icon:"disk"},
+                  {key:"Fix", value:"Check the rotation logic / permissions (rclone delete failing)", icon:"exit"}]') || rows='[]'
+                notify "$NTFY_TOPIC_CRITICAL" "🗑️ Backup not rotating: $svc" "$rows"
               fi
             done
         fi
       else
-        notify "$NTFY_TOPIC_OPS" "🔌 R2 unreachable" "ops-alerter failed to install rclone (check apk CDN) — skipping R2 capacity / freshness / rotation checks this poll."
+        rows=$(jq -nc '[
+          {key:"State", value:"rclone install failed", status:"error"},
+          {key:"Impact", value:"R2 capacity / freshness / rotation skipped this poll"},
+          {key:"Fix", value:"Check the apk CDN egress", icon:"exit"}]') || rows='[]'
+        notify "$NTFY_TOPIC_OPS" "🔌 R2 unreachable" "$rows"
       fi
     fi
 
