@@ -23,7 +23,11 @@ kind: CronJob
 metadata:
   name: anytype-backup
 spec:
-  schedule: "30 */6 * * *"          # ≤6h (NFR5); offset from heart's :40 so they don't scale-flap together
+  # ponytail: DAILY, not ≤6h (NFR5 exception for anytype). Each tick takes a FULL quiesce-tar of the
+  # whole BadgerDB store (~305 MiB, blob-heavy, doesn't dedupe) — 4×/day × 30d retention projected to
+  # ~36 GiB and blew past the 8 GiB R2 free-tier alert in 4 days. anysync clients hold their own copies
+  # so 24h server RPO is acceptable. Restore 6h + incremental backups if a stricter RPO is ever needed.
+  schedule: "30 3 * * *"            # daily 03:30; offset from heart's :40 so they don't scale-flap together
   timeZone: Asia/Seoul
   # ACTIVE post-cutover (2026-06-19): /data is ingested + identity-verified, Deployments at replicas=1.
   # (Pre-cutover this was suspended: a tick on an EMPTY PVC would have had the EXIT trap scale the app
@@ -80,7 +84,7 @@ spec:
                   fi
                   tar -C /data -czf "/scratch/anytype-${ts}.tar.gz" .
                   rclone copy "/scratch/anytype-${ts}.tar.gz" "r2:homelab-k3s-services-backup/anytype/"
-                  rclone delete --min-age 720h "r2:homelab-k3s-services-backup/anytype/" || true
+                  rclone delete --min-age 168h "r2:homelab-k3s-services-backup/anytype/" || true   # 7d (daily cadence → ~7 copies); was 720h, see schedule note
               env:
                 - name: RCLONE_CONFIG_R2_NO_CHECK_BUCKET   # bucket-scoped token can't probe/create the bucket → 403
                   value: "true"
@@ -105,7 +109,7 @@ kind: CronJob
 metadata:
   name: anytype-heart-backup
 spec:
-  schedule: "40 */6 * * *"
+  schedule: "40 3 * * *"            # daily 03:40 (NFR5 exception, see anytype-backup note); offset from anytype's :30
   timeZone: Asia/Seoul
   # ACTIVE post-cutover (2026-06-19): /data is ingested + identity-verified, Deployments at replicas=1.
   # (Pre-cutover this was suspended: a tick on an EMPTY PVC would have had the EXIT trap scale the app
@@ -154,7 +158,7 @@ spec:
                   fi
                   tar -C /data -czf "/scratch/anytype-heart-${ts}.tar.gz" .
                   rclone copy "/scratch/anytype-heart-${ts}.tar.gz" "r2:homelab-k3s-services-backup/anytype-heart/"
-                  rclone delete --min-age 720h "r2:homelab-k3s-services-backup/anytype-heart/" || true
+                  rclone delete --min-age 168h "r2:homelab-k3s-services-backup/anytype-heart/" || true   # 7d (daily cadence), was 720h
               env:
                 - name: RCLONE_CONFIG_R2_NO_CHECK_BUCKET
                   value: "true"
