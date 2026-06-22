@@ -3,8 +3,7 @@ kind: Kustomization
 
 resources:
   - namespace.yaml
-  - sealedsecret.yaml                 # cloudflared-token (legacy token mode) — kept until Stage 2 verified, then prune
-  - sealedsecret-credentials.yaml     # cloudflared-credentials (credentials.json) — Stage 2 auth
+  - sealedsecret-credentials.yaml     # cloudflared-credentials (credentials.json) — locally-managed tunnel auth
   - configmap.yaml                    # config.yaml: tunnel id + catch-all ingress (git SSOT)
   - deployment.yaml
 
