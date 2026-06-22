@@ -22,3 +22,8 @@ data:
     credentials-file: /etc/cloudflared/creds/credentials.json
     metrics: 0.0.0.0:2000
     no-autoupdate: true
+    ingress:
+      # catch-all → Traefik. Authoritative ONLY if the tunnel's remote config is empty (see C).
+      - service: https://10.0.0.101:443
+        originRequest:
+          noTLSVerify: true
