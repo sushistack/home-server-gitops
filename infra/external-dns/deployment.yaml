@@ -74,6 +74,7 @@ spec:
               memory: 128Mi
           securityContext:
             runAsNonRoot: true
+            runAsUser: 65534          # nobody — image defaults to root; required or kubelet refuses (runAsNonRoot)
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
             capabilities:
