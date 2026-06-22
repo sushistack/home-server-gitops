@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - rbac.yaml
+  - sealedsecret.yaml
+  - deployment.yaml
+
+# labels: (never namePrefix/commonLabels — a SealedSecret is sealed to an exact namespace/name;
+# a prefix rewrite breaks decryption — AR27).
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/name: external-dns
+      app.kubernetes.io/instance: external-dns
+      app.kubernetes.io/part-of: external-dns
+      app.kubernetes.io/managed-by: argocd
+      app.kubernetes.io/component: dns

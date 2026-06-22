@@ -52,6 +52,9 @@ apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: jellyfin
+  annotations:
+    # public (whitelist): external-dns publishes this host to CF DNS
+    external-dns.alpha.kubernetes.io/target: 26586f61-9c31-4d40-b8c5-8898b1e567e3.cfargotunnel.com
   namespace: edge-proxies
 spec:
   entryPoints:

@@ -1,0 +1,7 @@
+# Stage 1 (public-host-automation) — external-dns automates public *.eli.kr CF DNS by watching
+# Traefik IngressRoutes. Sibling infra/ component of cloudflared (the public edge it points at).
+# Outbound-only controller: no Service, no IngressRoute, no PVC. Reads the apiserver + CF API.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-dns
