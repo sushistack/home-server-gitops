@@ -1,0 +1,26 @@
+# Stage 2 (public-host-automation) — tunnel ingress as code (git SSOT), replacing the per-host
+# rules that lived in the CF dashboard (token mode). Traefik does ALL host routing, so this is a
+# single catch-all: every request the tunnel receives → Traefik, which matches the Host() against
+# its IngressRoutes. The public/internal gate is no longer here — it is external-dns (does a public
+# CF DNS record exist? Stage 1). Unknown hosts that somehow reach Traefik get its default 404.
+#
+# noTLSVerify: the cloudflared→Traefik leg is in-cluster; Traefik selects its per-host cert by SNI
+# but the cert it presents on this internal hop is not browser-facing (the browser sees CF's edge
+# cert). Matches the old dashboard rules (each was https://10.0.0.101:443 + noTLSVerify).
+# Adding a public host now = IngressRoute + external-dns target annotation only; THIS FILE never changes.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-config
+  namespace: cloudflared
+data:
+  config.yaml: |
+    tunnel: 26586f61-9c31-4d40-b8c5-8898b1e567e3
+    credentials-file: /etc/cloudflared/creds/credentials.json
+    metrics: 0.0.0.0:2000
+    no-autoupdate: true
+    ingress:
+      # catch-all → Traefik (in-cluster). Host routing is Traefik's job.
+      - service: https://traefik.kube-system.svc:443
+        originRequest:
+          noTLSVerify: true

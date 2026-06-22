@@ -34,21 +34,26 @@ spec:
         - name: cloudflared
           # Pinned in versions.yaml (Story 5.3 SSOT). Was :latest on .20 — pinned on the move.
           image: cloudflare/cloudflared:2026.6.1@sha256:6d91c121b803126f7a5344005d17a9324788fc09d305b6e2560ec6040a7ae283
+          # Stage 2: credentials-file mode. The tunnel id + ingress (catch-all → Traefik) live in
+          # config.yaml (ConfigMap, git SSOT); --no-autoupdate/--metrics moved there too. The TUNNEL_TOKEN
+          # envFrom is gone — auth is now the credentials.json Secret. /ready still on :2000 (metrics addr).
           args:
             - tunnel
-            - --no-autoupdate
-            - --metrics
-            - 0.0.0.0:2000   # /ready returns 200 once the tunnel has live connections
+            - --config
+            - /etc/cloudflared/config.yaml
             - run
-          envFrom:
-            - secretRef:
-                name: cloudflared-token   # TUNNEL_TOKEN — sealed; envFrom only (AR22/AR27)
           env:
             - name: TZ
               value: Asia/Seoul
           ports:
             - name: metrics
               containerPort: 2000
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cloudflared
+            - name: creds
+              mountPath: /etc/cloudflared/creds
+              readOnly: true
           resources:
             requests:
               cpu: 50m
@@ -72,3 +77,10 @@ spec:
               port: 2000
             failureThreshold: 3
             periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: cloudflared-config
+        - name: creds
+          secret:
+            secretName: cloudflared-credentials
