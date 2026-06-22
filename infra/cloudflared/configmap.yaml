@@ -1,16 +1,16 @@
-# Stage 2 (public-host-automation) — cloudflared run config (credentials-file mode; token mode escaped).
+# Stage 2 (public-host-automation) — cloudflared run config, FULLY git-managed.
 #
-# IMPORTANT — ingress is NOT here: this tunnel was created in the CF dashboard, so it is
-# REMOTELY-MANAGED. cloudflared always uses the tunnel's remote (CF-side) ingress config and ignores
-# any local `ingress:` block (verified: the local block was overridden; the API has no DELETE for the
-# remote config — code 1089). So ingress lives in CF, set once to a single catch-all → Traefik:
-#     PUT /accounts/<acc>/cfd_tunnel/<id>/configurations
-#       {"config":{"ingress":[{"service":"https://10.0.0.101:443","originRequest":{"noTLSVerify":true}}]}}
-# That catch-all never changes when a host is added (Traefik does host routing; the gate is external-dns
-# Stage 1 — does a public CF record exist?). The toil is gone; the ingress just isn't in git for THIS
-# tunnel. True git-SSOT would require recreating the tunnel as locally-managed (new id + re-point all
-# CNAMEs) or managing the catch-all via Terraform (cloudflare provider) — deferred, not worth it for one
-# static rule. This file therefore carries only tunnel id + credentials path.
+# This tunnel ("home-server-local", id 761ca633…) was created with config_src=local, so it is
+# LOCALLY-MANAGED: cloudflared uses the ingress below as the source of truth and pushes it up to CF
+# for display (it does NOT fetch a remote config). The old dashboard-created tunnel (26586f61…,
+# remotely-managed) could not be converted in place — its remote config had no DELETE (1089) and
+# rejected an empty PUT (1056) — so we cut over to a fresh local tunnel and re-pointed every public
+# CNAME (blue-green, zero downtime). The old tunnel is decommissioned.
+#
+# Single catch-all → Traefik: Traefik does all host routing, so this never changes when a host is
+# added. The public/internal gate is external-dns (Stage 1: does a public CF record exist?).
+# noTLSVerify: the cloudflared→Traefik hop is in-cluster and not browser-facing (browser sees CF's
+# edge cert). Adding a public host = IngressRoute + external-dns target annotation only.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -18,7 +18,11 @@ metadata:
   namespace: cloudflared
 data:
   config.yaml: |
-    tunnel: 26586f61-9c31-4d40-b8c5-8898b1e567e3
+    tunnel: 761ca633-e9d6-4af8-8508-727bba00f0a9
     credentials-file: /etc/cloudflared/creds/credentials.json
     metrics: 0.0.0.0:2000
     no-autoupdate: true
+    ingress:
+      - service: https://10.0.0.101:443
+        originRequest:
+          noTLSVerify: true
