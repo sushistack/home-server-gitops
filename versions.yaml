@@ -134,7 +134,7 @@ workloads:
   # Story 5.6 — standalone-LXC consolidation. Tags pinned now (lint passes); SWAP TO @sha256 digests
   # at cutover (AR29 — the manifest comments carry the `imagetools inspect` command for each).
   trade-monitor:
-    manifest: workloads/trade-monitor/cronjob.yaml
+    manifest: workloads/trade-monitor/deployment.yaml
     image: ghcr.io/sushistack/trade.monitor@sha256:b20dc1dca1860ae5dcd69a5f07a77f70ea7dd361ef4ba71ff874bf282c8a5478   # fonts-dejavu-core build (0.1.0 / sha-e304111)
   komga:
     manifest: workloads/komga/deployment-komga.yaml
