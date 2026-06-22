@@ -1,0 +1,30 @@
+# Stage 1 (public-host-automation) — external-dns as a late-wave infra Application (self-authored
+# kustomize, same pattern as cloudflared.yaml / ops-alerts.yaml — NOT a Helm vendor source). The
+# app-of-apps root recurses argocd/ and adopts this. No ${SECRET:*} tokens (the CF token lives in
+# the SealedSecret; the tunnel target is public), so the render CMP build is a no-op.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-dns
+  namespace: argocd
+  annotations:
+    # Wave 2: after the sealed-secrets controller (wave 0) so the SealedSecret can decrypt — same
+    # wave as cloudflared. The traefik.io CRDs ship with k3s-bundled Traefik (present early); the
+    # controller polls continuously, so it picks up workload IngressRoutes whenever they sync.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: homelab
+  source:
+    repoURL: https://github.com/sushistack/homelab-gitops.git
+    targetRevision: HEAD
+    path: infra/external-dns
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: external-dns
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

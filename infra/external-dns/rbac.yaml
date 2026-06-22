@@ -1,0 +1,31 @@
+# Least-privilege, read-only (get/list/watch ONLY, no writes, no secret reads). Source is
+# --source=traefik-proxy EXCLUSIVELY, so the only CRDs needed are the traefik.io IngressRoute
+# kinds; external-dns also lists core services/endpoints/pods/nodes at startup (target discovery).
+# DNS writes happen against the Cloudflare API (the SealedSecret token), NOT the apiserver.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: external-dns
+rules:
+  - apiGroups: ["traefik.io"]
+    resources: ["ingressroutes", "ingressroutetcps", "ingressrouteudps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["services", "endpoints", "pods", "nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: external-dns
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: external-dns
+subjects:
+  - kind: ServiceAccount
+    name: external-dns
+    namespace: external-dns

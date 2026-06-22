@@ -171,3 +171,9 @@ workloads:
   cloudflared:
     manifest: infra/cloudflared/deployment.yaml
     image: cloudflare/cloudflared:2026.6.1@sha256:6d91c121b803126f7a5344005d17a9324788fc09d305b6e2560ec6040a7ae283
+  # Stage 1 (public-host-automation) — external-dns automates public *.eli.kr CF DNS off Traefik
+  # IngressRoutes. Tag pinned now (lint passes); SWAP TO @sha256 at apply (AR29):
+  #   crane digest registry.k8s.io/external-dns/external-dns:v0.21.0
+  external-dns:
+    manifest: infra/external-dns/deployment.yaml
+    image: registry.k8s.io/external-dns/external-dns:v0.21.0
