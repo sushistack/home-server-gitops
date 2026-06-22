@@ -185,8 +185,54 @@ generates it on first boot. (If you instead pick a WebSocket-mode setup, the age
    (`kubectl -n beszel get ds beszel-agent`) reporting CPU/mem/disk/net + history.
 - **Optional (AC3d)** `shoutrrr → ntfy` hub alerts: configure in the hub UI (Settings → Notifications)
   reusing the existing ntfy topic. Not a manifest.
-- **NOT built (AC3e, Plane 0):** no agent is force-installed on the Proxmox host or the `storage` LXC.
-  If wanted, install the `beszel-agent` binary there by hand (optional operator step).
+### 3a. Beszel agent on the Proxmox host (Plane 0) — optional operator step
+
+Not GitOps-managed (the hypervisor is outside k3s and outside `ansible/inventory.yml`). Same SSH
+connection model as the in-cluster agents: the binary LISTENs on `:45876`, the hub DIALS it, and the
+`KEY` is the **same hub public key** already in `workloads/beszel/configmap-agent-key.yaml` — so no new
+key. Division of labour: Netdata covers per-pod/k8s detail, Beszel covers node-level + this non-k8s host.
+
+Run on the Proxmox host as root. Pinned to the **same `beszel-agent` version as `versions.yaml`**
+(`0.18.7`); bump both together when the in-cluster DaemonSet bumps.
+
+```sh
+VER=0.18.7
+# static linux/amd64 binary from the pinned release (the filename is unversioned; the /vVER/ path pins it)
+curl -fsSL "https://github.com/henrygd/beszel/releases/download/v${VER}/beszel-agent_linux_amd64.tar.gz" \
+  | tar -xzf - -C /usr/local/bin beszel-agent
+chmod +x /usr/local/bin/beszel-agent
+useradd -r -M -s /usr/sbin/nologin beszel 2>/dev/null || true   # unprivileged service user
+
+# KEY MUST equal data.KEY in workloads/beszel/configmap-agent-key.yaml (the hub's public key).
+cat >/etc/systemd/system/beszel-agent.service <<'UNIT'
+[Unit]
+Description=Beszel Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/beszel-agent
+Environment="LISTEN=45876"
+Environment="KEY=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINWEtsmihIfFNqV8abX3+tm2JTDJpM/ruX+LvRO3i5rH"
+User=beszel
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload && systemctl enable --now beszel-agent
+ss -lntp | grep 45876        # expect beszel-agent LISTENing
+```
+
+Then: allow inbound `:45876` to the Proxmox host from the hub (confirm the hub pod egresses to the
+Proxmox LAN IP — k3s SNATs pod egress to the LAN, so it should reach it), and in the hub UI **Add
+System** → `<Proxmox LAN IP>` port `45876`. The `storage` LXC can be added the same way if wanted.
+
+> Faster alternative (not version-pinned — installs the latest agent + sets up the user/systemd itself):
+> `curl -sL https://get.beszel.dev | sh -s -- -k "<hub public key>" -p 45876`. Prefer the pinned manual
+> install above to stay aligned with the `versions.yaml` SSOT.
 
 ---
 
