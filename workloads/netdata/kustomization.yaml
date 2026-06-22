@@ -13,7 +13,8 @@ resources:
   - service.yaml
   - ingressroute.yaml
   - certificate.yaml
-  - sealedsecret.yaml
+  - sealedsecret.yaml          # netdata-stream: the parent/child stream.conf (shared api key)
+  - sealedsecret-notify.yaml   # netdata-notify: health_alarm_notify.conf (ntfy card+button, parent only)
 
 # netdata.conf for each role → ConfigMap `netdata-config`, mounted by subPath. disableNameSuffixHash so
 # the workloads can reference the stable name. (stream.conf lives in the SealedSecret, not here.)

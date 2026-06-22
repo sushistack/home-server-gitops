@@ -211,6 +211,22 @@ this requires the `netdata.eli.kr` LAN DNS override from §4.
 > parent's `:19999` stream receiver directly on the LAN with a NodePort Service and point the child at
 > `<node-IP>:<nodeport>` instead of `netdata.eli.kr:443:SSL`. Add that Service to `workloads/netdata/`.
 
+### 3b. Netdata alarms → ntfy (structured card + button)
+
+The parent's `[health] enabled = yes` + the `netdata-notify` SealedSecret (`health_alarm_notify.conf`
+with a `custom_sender()`) publish resource alarms — the gap uptime-kuma + the ntfy poller don't cover —
+to the **`homelab-monitor`** topic as structured KV cards (tag `card`, `{"type":"kv",...}` body, an
+"Open Netdata" `view` action button — the same contract as `infra/ops-alerts`). Routes via the reused
+`ops-alerter` ntfy token (in-cluster `http://ntfy.ntfy.svc.cluster.local`).
+
+> **OUT-OF-BAND grant (not GitOps — re-apply on a cluster rebuild):** ntfy is deny-all, and the
+> `ops-alerter` user originally held `wo` only on `homelab-critical`/`homelab-ops`. Netdata's topic was
+> granted with:
+> ```sh
+> kubectl -n ntfy exec deploy/ntfy -- ntfy access ops-alerter homelab-monitor wo
+> ```
+> (The orphaned `beszel` ntfy user — also `wo` on `homelab-monitor` — can be removed: `ntfy user del beszel`.)
+
 ---
 
 ## 4. 🔴 OpenWrt LAN DNS override — STAGED (Task 4 / 4b, high-blast-radius)

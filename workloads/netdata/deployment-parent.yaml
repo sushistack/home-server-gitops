@@ -72,6 +72,9 @@ spec:
             - name: stream              # stream.conf (holds the shared key) — from the SealedSecret
               mountPath: /etc/netdata/stream.conf
               subPath: stream-parent.conf
+            - name: notify              # health_alarm_notify.conf (ntfy token + custom_sender card) — SealedSecret
+              mountPath: /etc/netdata/health_alarm_notify.conf
+              subPath: health_alarm_notify.conf
       volumes:
         - name: cache
           persistentVolumeClaim:
@@ -84,3 +87,6 @@ spec:
         - name: stream
           secret:
             secretName: netdata-stream
+        - name: notify
+          secret:
+            secretName: netdata-notify
