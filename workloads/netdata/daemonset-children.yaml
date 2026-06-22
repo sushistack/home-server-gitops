@@ -85,6 +85,8 @@ spec:
             - name: stream              # stream.conf (api key + destination) — from the SealedSecret
               mountPath: /etc/netdata/stream.conf
               subPath: stream-child.conf
+            - name: lib                 # node-local MACHINE_GUID — stable across pod restarts so a
+              mountPath: /var/lib/netdata   # restarted child re-uses its identity (no ghost k3s-cp-* node)
       volumes:
         - name: proc
           hostPath:
@@ -102,3 +104,7 @@ spec:
         - name: stream
           secret:
             secretName: netdata-stream
+        - name: lib                 # node-local dir (DaemonSet is node-pinned) — persists this node's
+          hostPath:                 # netdata identity. netdata's entrypoint (runs as root) fixes ownership.
+            path: /var/lib/netdata-children
+            type: DirectoryOrCreate
