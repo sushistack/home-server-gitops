@@ -178,38 +178,45 @@ reproducibility (there is **no backup actor**: the layout is re-clickable config
 The K3s Netdata **parent** already receives the 3 node children. To see the Proxmox host in the *same*
 UI (left-hand node list), run a Netdata **child** on Proxmox that streams to the parent. Proxmox is not
 k8s — no per-pod/RBAC concerns, it just reports host CPU/mem/disk/net (+ its VMs/LXC). **No cluster-side
-change is needed:** the parent's `stream.conf` already authorizes this shared key (`[<UUID>] allow from
-= *`), so the Proxmox child reuses it.
+key change is needed:** the parent's `stream.conf` already authorizes the shared key (`[<UUID>] allow
+from = *`), so the Proxmox child reuses it.
 
-Reaching the parent from outside the cluster uses the existing Traefik IngressRoute (no new exposure);
-this requires the `netdata.eli.kr` LAN DNS override from §4.
+> ⚠️ **Stream DIRECT to a node, NOT through Traefik.** Verified the hard way: Traefik is an HTTP reverse
+> proxy and **cannot carry Netdata's streaming connection-upgrade protocol** — a child pointed at
+> `netdata.eli.kr:443:SSL` connects but fails negotiation with `code=400 "remote node response is not
+> understood, is it Netdata?"`. (The `stream_info` `status:404` you'll see in the log is BENIGN — the
+> in-cluster children hit it too, then establish over the direct path.) So the parent exposes its
+> `:19999` receiver on the node LAN IPs via the **`netdata-stream` LoadBalancer** (`workloads/netdata/
+> service-stream.yaml`, k3s ServiceLB → `10.0.0.101/102/103:19999`), and the child dials those directly,
+> plain — exactly how the in-cluster children connect. No `netdata.eli.kr` DNS needed for streaming.
 
 1. Read the shared streaming key (lives only in the SealedSecret — never hard-code it):
    ```sh
    kubectl -n netdata get secret netdata-stream \
      -o jsonpath='{.data.stream-child\.conf}' | base64 -d | grep 'api key'
    ```
-2. On the Proxmox host (Debian), install Netdata with telemetry off and no auto-update (confirm the
-   flags against the current kickstart docs at install):
+2. On the Proxmox host (Debian), install Netdata, telemetry off, no auto-update. (Proxmox here has no
+   public DNS — point the resolver at the LAN gateway first: `sed -i '1i nameserver 10.0.0.1'
+   /etc/resolv.conf`.) Static install keeps it self-contained under `/opt/netdata` (config at
+   `/opt/netdata/etc/netdata/`):
    ```sh
-   wget -O /tmp/nd.sh https://get.netdata.cloud/kickstart.sh
-   sh /tmp/nd.sh --stable-channel --disable-telemetry --no-updates --dont-start-it
+   curl -fsSL https://get.netdata.cloud/kickstart.sh -o /tmp/nd.sh
+   sh /tmp/nd.sh --static-only --stable-channel --disable-telemetry --no-updates --dont-start-it --non-interactive
    ```
-3. Configure it as a streaming child. `/etc/netdata/stream.conf`:
+3. Configure it as a streaming child. `stream.conf` — destination = the node IPs (space-separated =
+   failover), **plain, no `:SSL`**:
    ```ini
    [stream]
        enabled = yes
-       destination = netdata.eli.kr:443:SSL
+       destination = 10.0.0.101:19999 10.0.0.102:19999 10.0.0.103:19999
        api key = <UUID from step 1>
    ```
-   `/etc/netdata/netdata.conf`: `[health] enabled = no`, `[ml] enabled = no`,
-   `[db] mode = ram` (the parent keeps the history; use `dbengine` instead if you also want local
-   retention on the host). Export `DO_NOT_TRACK=1` for the service, then `systemctl enable --now netdata`.
-4. Verify: parent UI node count goes 4 → 5 (`Receiving` 3 → 4) and Proxmox shows in the left node list.
-
-> Fallback if streaming-through-Traefik won't establish (proxy buffering / handshake): expose the
-> parent's `:19999` stream receiver directly on the LAN with a NodePort Service and point the child at
-> `<node-IP>:<nodeport>` instead of `netdata.eli.kr:443:SSL`. Add that Service to `workloads/netdata/`.
+   `netdata.conf`: `[global] hostname = proxmox`, `[health] enabled = no` (the parent alarms for it),
+   `[ml] enabled = no` (keep `[db] mode = dbengine` for local history, or `ram` to stream-only). Then
+   `systemctl enable --now netdata`. `chmod 640` the key-bearing `stream.conf`.
+4. Verify: child log shows `STREAM SND 'proxmox' [to 10.0.0.10x:19999]: established link … streaming is
+   ready`; parent `curl localhost:19999/api/v1/info | grep mirrored_hosts` includes `proxmox`. The
+   `storage` LXC (or any non-k8s host) joins the same way.
 
 ### 3b. Netdata alarms → ntfy (structured card + button)
 
