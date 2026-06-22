@@ -15,6 +15,9 @@ apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: beszel
+  annotations:
+    # Stage 3: behind CF Access (email-OTP). Public record so Access can gate it.
+    external-dns.alpha.kubernetes.io/target: 761ca633-e9d6-4af8-8508-727bba00f0a9.cfargotunnel.com
 spec:
   entryPoints:
     - websecure

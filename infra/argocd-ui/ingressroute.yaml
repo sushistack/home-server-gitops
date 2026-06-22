@@ -10,8 +10,8 @@ kind: IngressRoute
 metadata:
   name: argocd-ui
   annotations:
-    # sensitive internal — HARD-LOCK (B): external-dns never publishes, even if a target is added
-    external-dns.alpha.kubernetes.io/controller: none
+    # Stage 3: behind CF Access (email-OTP). Public record so Access can gate it.
+    external-dns.alpha.kubernetes.io/target: 761ca633-e9d6-4af8-8508-727bba00f0a9.cfargotunnel.com
   namespace: argocd
 spec:
   entryPoints:

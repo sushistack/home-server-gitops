@@ -30,7 +30,7 @@ metadata:
   name: komga
   annotations:
     # public (whitelist): external-dns publishes this host to CF DNS
-    external-dns.alpha.kubernetes.io/target: 26586f61-9c31-4d40-b8c5-8898b1e567e3.cfargotunnel.com
+    external-dns.alpha.kubernetes.io/target: 761ca633-e9d6-4af8-8508-727bba00f0a9.cfargotunnel.com
 spec:
   entryPoints:
     - websecure
@@ -65,6 +65,9 @@ apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: suwayomi
+  annotations:
+    # Stage 3: behind CF Access (email-OTP). Public record so Access can gate it.
+    external-dns.alpha.kubernetes.io/target: 761ca633-e9d6-4af8-8508-727bba00f0a9.cfargotunnel.com
 spec:
   entryPoints:
     - websecure
