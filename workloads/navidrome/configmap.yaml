@@ -11,6 +11,8 @@ data:
   TZ: Asia/Seoul
   ND_MUSIC_FOLDER: /music
   ND_DATA_FOLDER: /data
-  ND_AUTOIMPORTSCANINTERVAL: "900"   # 15-min rescan for newly-discovered tracks
+  # 2026-06-22: dropped ND_AUTOIMPORTSCANINTERVAL ("900"). v0.62.0's effective config (Insights dump)
+  # is watcher-based (scanWatcherWait=5, inotify) — the interval key triggers NO periodic scan
+  # (0 scans / CGO over 2d18h uptime, CPU 1m). It was a dead key that mis-led deferred.md H2.
   ND_LOGLEVEL: info
   ND_LASTFM_ENABLED: "true"          # APIKEY/SECRET arrive via the SealedSecret

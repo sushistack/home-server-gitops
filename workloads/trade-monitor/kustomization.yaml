@@ -3,13 +3,13 @@ kind: Kustomization
 
 resources:
   - namespace.yaml
-  - cronjob.yaml
+  - deployment.yaml
 # No service.yaml / ingressroute.yaml / certificate.yaml: outbound-only, no listener (AC1a).
 # No pvc.yaml: stateless. No sealedsecret.yaml: Binance public endpoints need no key (AC1a).
 # No backup-cronjob.yaml: owns no data.
 
 # config/settings.yaml -> trade-monitor-config ConfigMap, mounted at /config/settings.yaml.
-# disableNameSuffixHash so the CronJob can reference the stable name `trade-monitor-config`.
+# disableNameSuffixHash so the Deployment can reference the stable name `trade-monitor-config`.
 configMapGenerator:
   - name: trade-monitor-config
     files:
@@ -18,7 +18,7 @@ generatorOptions:
   disableNameSuffixHash: true
 
 # `labels:` (never commonLabels — pollutes selectors; never namePrefix). includeSelectors:false
-# keeps these out of the CronJob pod template label (hand-written app.kubernetes.io/name).
+# keeps these out of the Deployment selector/pod-template label (hand-written app.kubernetes.io/name).
 labels:
   - includeSelectors: false
     pairs:
@@ -26,4 +26,4 @@ labels:
       app.kubernetes.io/instance: trade-monitor
       app.kubernetes.io/part-of: trade-monitor
       app.kubernetes.io/managed-by: argocd
-      app.kubernetes.io/component: batch
+      app.kubernetes.io/component: worker

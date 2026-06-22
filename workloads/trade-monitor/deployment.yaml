@@ -1,0 +1,54 @@
+# Story 5.6 — trade-monitor. Stateless: fetches Binance OHLCV (BTC/ETH/XRP/SOL/DOGE) + Yahoo ^GSPC →
+# renders 240×240 JPEGs → multipart-POSTs to LAN displays (10.0.0.201–206) + an AWTRIX ticker (10.0.0.200).
+# NO PVC, NO Service, NO ingress, NO SealedSecret — outbound-only.
+#
+# 2026-06-22: CronJob (`* * * * *`) -> warm Deployment (deferred.md / H1). The node fan was QUIET when this
+# ran as the old LXC `python-crontab` cron, LOUD as a per-minute CronJob — same render work. Root delta was
+# NOT matplotlib: it was the per-minute pod/sandbox churn (containerd/runc/CNI setup+teardown every 60s, a
+# node-level cost the persistent LXC never paid). One long-lived pod with an internal `timeout 55 + sleep`
+# loop reproduces the old LXC model exactly: persistent container, re-fork `python -m trade_monitor` each
+# cycle. The image entrypoint is single-shot (Dockerfile: `ENTRYPOINT ["python","-m","trade_monitor"]`), so
+# the loop lives here in the command override — no upstream image change.
+# Trade-offs vs the CronJob: failures are now log lines, not visible Failed jobs (acceptable, outbound-only);
+# `timeout 55` replaces activeDeadlineSeconds (kill a hung cycle); the serial loop replaces concurrencyPolicy
+# Forbid (single process can't overlap itself). sleep 180 = ~3-min cadence (user choice); lower to taste.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trade-monitor
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # single instance — never run two render loops at once (would double-POST to displays)
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trade-monitor
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trade-monitor
+    spec:
+      containers:
+        - name: trade-monitor
+          # PUBLIC ghcr.io/sushistack/trade.monitor, pinned by digest (AR29) = fonts-dejavu-core build
+          # (PIL needs the system TTF; tag 0.1.0 + sha-e304111). Bump via PR (versions.yaml + this line).
+          image: ghcr.io/sushistack/trade.monitor@sha256:b20dc1dca1860ae5dcd69a5f07a77f70ea7dd361ef4ba71ff874bf282c8a5478
+          # Warm loop: persistent container, re-fork the single-shot entrypoint each cycle. `timeout 55`
+          # mirrors the old LXC `timeout 55` (kill a hung run); a non-zero exit just falls through to sleep.
+          command: ["/bin/sh", "-c"]
+          args:
+            - "while true; do timeout 55 python -m trade_monitor; sleep 180; done"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi   # memory-only (no CPU limit -> no CFS throttle); matplotlib/pandas spike
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: trade-monitor-config
