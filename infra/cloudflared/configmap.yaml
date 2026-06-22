@@ -1,13 +1,16 @@
-# Stage 2 (public-host-automation) — tunnel ingress as code (git SSOT), replacing the per-host
-# rules that lived in the CF dashboard (token mode). Traefik does ALL host routing, so this is a
-# single catch-all: every request the tunnel receives → Traefik, which matches the Host() against
-# its IngressRoutes. The public/internal gate is no longer here — it is external-dns (does a public
-# CF DNS record exist? Stage 1). Unknown hosts that somehow reach Traefik get its default 404.
+# Stage 2 (public-host-automation) — cloudflared run config (credentials-file mode; token mode escaped).
 #
-# noTLSVerify: the cloudflared→Traefik leg is in-cluster; Traefik selects its per-host cert by SNI
-# but the cert it presents on this internal hop is not browser-facing (the browser sees CF's edge
-# cert). Matches the old dashboard rules (each was https://10.0.0.101:443 + noTLSVerify).
-# Adding a public host now = IngressRoute + external-dns target annotation only; THIS FILE never changes.
+# IMPORTANT — ingress is NOT here: this tunnel was created in the CF dashboard, so it is
+# REMOTELY-MANAGED. cloudflared always uses the tunnel's remote (CF-side) ingress config and ignores
+# any local `ingress:` block (verified: the local block was overridden; the API has no DELETE for the
+# remote config — code 1089). So ingress lives in CF, set once to a single catch-all → Traefik:
+#     PUT /accounts/<acc>/cfd_tunnel/<id>/configurations
+#       {"config":{"ingress":[{"service":"https://10.0.0.101:443","originRequest":{"noTLSVerify":true}}]}}
+# That catch-all never changes when a host is added (Traefik does host routing; the gate is external-dns
+# Stage 1 — does a public CF record exist?). The toil is gone; the ingress just isn't in git for THIS
+# tunnel. True git-SSOT would require recreating the tunnel as locally-managed (new id + re-point all
+# CNAMEs) or managing the catch-all via Terraform (cloudflare provider) — deferred, not worth it for one
+# static rule. This file therefore carries only tunnel id + credentials path.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -19,8 +22,3 @@ data:
     credentials-file: /etc/cloudflared/creds/credentials.json
     metrics: 0.0.0.0:2000
     no-autoupdate: true
-    ingress:
-      # catch-all → Traefik (in-cluster). Host routing is Traefik's job.
-      - service: https://traefik.kube-system.svc:443
-        originRequest:
-          noTLSVerify: true
