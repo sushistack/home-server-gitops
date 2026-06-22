@@ -160,6 +160,15 @@ workloads:
   beszel-agent:
     manifest: workloads/beszel/daemonset-agent.yaml
     image: henrygd/beszel-agent:0.18.7
+  # Netdata — heavier-detail node + per-pod monitoring (parent dashboard/dbengine + children DaemonSet
+  # streaming). SAME image for both roles (role = config). Tag pinned now (lint passes); SWAP TO @sha256
+  # at cutover (AR29):  docker buildx imagetools inspect netdata/netdata:v2.10.3
+  netdata-parent:
+    manifest: workloads/netdata/deployment-parent.yaml
+    image: netdata/netdata:v2.10.3
+  netdata-children:
+    manifest: workloads/netdata/daemonset-children.yaml
+    image: netdata/netdata:v2.10.3
   # Story 5.8 — uptime-kuma migrated INTO k3s (was Compose/NPM on .20). Pinned to the exact digest
   # the live host ran (:latest == 1.23.17) so the migrated kuma.db schema matches (AR29).
   uptime-kuma:

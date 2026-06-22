@@ -1,0 +1,49 @@
+# Netdata parent dashboard — INTERNAL-only (a monitoring dashboard shouldn't be broadly public; same
+# stance as uptime-kuma). LAN-only OpenWrt DNS override → 10.0.0.101 (staged in runbook). The
+# external-dns target annotation publishes the public record so CF Access can gate it (Stage 3); no
+# ipAllowList (the tunnel egresses from a LAN IP → an allowlist would admit internet-via-tunnel).
+# NB: the Netdata UI is itself UNAUTHENTICATED — CF Access (public) + LAN-only DNS are the gate.
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: netdata-redirect-https
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: netdata
+  annotations:
+    # Stage 3: behind CF Access (email-OTP). Public record so Access can gate it.
+    external-dns.alpha.kubernetes.io/target: 761ca633-e9d6-4af8-8508-727bba00f0a9.cfargotunnel.com
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`${SECRET:DOMAIN_NETDATA}`)
+      kind: Rule
+      services:
+        - name: netdata
+          port: 19999
+  tls:
+    secretName: netdata-tls
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: netdata-redirect
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`${SECRET:DOMAIN_NETDATA}`)
+      kind: Rule
+      middlewares:
+        - name: netdata-redirect-https
+      services:
+        - name: netdata   # required by the IngressRoute schema; middleware redirects before it's hit
+          port: 19999

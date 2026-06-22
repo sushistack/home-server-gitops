@@ -1,0 +1,16 @@
+# Netdata parent dbengine history (/var/cache/netdata). Longhorn-replicated, RWO → the parent uses
+# strategy:Recreate. Prune=false + Retain: losing it costs metric history (minutes-to-days of charts),
+# not config — the same deliberate no-backup stance as beszel (pairings/metrics are reproducible/short).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: netdata-cache
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 10Gi

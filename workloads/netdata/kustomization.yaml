@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Netdata — ONE logical workload, TWO components (parent Deployment + children DaemonSet), one
+# namespace (the beszel hub+agent shape). One Application via the `workloads` ApplicationSet.
+# The streaming api key is a SealedSecret (netdata-stream), NOT a committed ConfigMap (public repo).
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - pvc.yaml
+  - deployment-parent.yaml
+  - daemonset-children.yaml
+  - service.yaml
+  - ingressroute.yaml
+  - certificate.yaml
+  - sealedsecret.yaml
+
+# netdata.conf for each role → ConfigMap `netdata-config`, mounted by subPath. disableNameSuffixHash so
+# the workloads can reference the stable name. (stream.conf lives in the SealedSecret, not here.)
+configMapGenerator:
+  - name: netdata-config
+    files:
+      - netdata-parent.conf
+      - netdata-child.conf
+generatorOptions:
+  disableNameSuffixHash: true
+
+# Only the SHARED identity here (komga/beszel rule): app.kubernetes.io/name + /component DIFFER per
+# component (parent=netdata, child=netdata-children), hand-written inline — putting `name` here would
+# clobber a template label and break a selector. includeSelectors:false keeps these out of selectors.
+# NEVER namePrefix (breaks the SealedSecret name+ns binding).
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/instance: netdata
+      app.kubernetes.io/part-of: netdata
+      app.kubernetes.io/managed-by: argocd

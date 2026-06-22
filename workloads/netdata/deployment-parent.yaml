@@ -1,0 +1,86 @@
+# Netdata PARENT (= beszel hub): central dashboard + long-horizon dbengine history. Receives streams
+# from the per-node children and serves the single UI (internal-only IngressRoute).
+#
+# dbengine at /var/cache/netdata → RWO Longhorn PVC → strategy:Recreate (single-writer, the komga/beszel
+# pattern). Parent needs NO host mounts and NO extra capabilities — it only receives streams + serves
+# HTTP + collects its own pod's metrics.
+#
+# CONFIRM the current stable tag at install + SWAP TO @sha256 digest at cutover (AR29):
+#   docker buildx imagetools inspect netdata/netdata:v2.10.3
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: netdata
+  labels:
+    app.kubernetes.io/name: netdata
+    app.kubernetes.io/component: parent
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 300
+  strategy:
+    type: Recreate          # RWO dbengine PVC, single writer
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: netdata
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: netdata
+    spec:
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        # netdata runs as uid 201 in-image; let it own the mounted PVC/state dirs.
+        fsGroup: 201
+      containers:
+        - name: netdata
+          image: netdata/netdata:v2.10.3
+          ports:
+            - containerPort: 19999
+          env:
+            - name: TZ
+              value: Asia/Seoul
+            - name: DO_NOT_TRACK          # no anonymous telemetry / no Netdata Cloud
+              value: "1"
+          startupProbe:
+            httpGet:
+              path: /api/v1/info
+              port: 19999
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/v1/info
+              port: 19999
+          livenessProbe:
+            httpGet:
+              path: /api/v1/info
+              port: 19999
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: cache               # dbengine history — the PVC
+              mountPath: /var/cache/netdata
+            - name: lib                 # agent/alarm state — ephemeral is fine
+              mountPath: /var/lib/netdata
+            - name: config              # netdata.conf (subPath: don't clobber /etc/netdata)
+              mountPath: /etc/netdata/netdata.conf
+              subPath: netdata-parent.conf
+            - name: stream              # stream.conf (holds the shared key) — from the SealedSecret
+              mountPath: /etc/netdata/stream.conf
+              subPath: stream-parent.conf
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: netdata-cache
+        - name: lib
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: netdata-config
+        - name: stream
+          secret:
+            secretName: netdata-stream

@@ -1,0 +1,15 @@
+# Parent ClusterIP — fronts BOTH the dashboard (via IngressRoute) and the streaming receiver that the
+# children dial at netdata.netdata.svc.cluster.local:19999. Children are NOT behind a Service (they
+# stream OUT to the parent; no inbound).
+apiVersion: v1
+kind: Service
+metadata:
+  name: netdata
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: netdata
+  ports:
+    - name: http
+      port: 19999
+      targetPort: 19999

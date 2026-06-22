@@ -1,0 +1,12 @@
+# Per-host production TLS (letsencrypt-prod, DNS-01; no public reachability needed). Same as beszel.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: netdata-tls
+spec:
+  secretName: netdata-tls
+  dnsNames:
+    - "${SECRET:DOMAIN_NETDATA}"
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
