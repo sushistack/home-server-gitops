@@ -10,22 +10,21 @@ headerStyle: clean
 background:
   image: https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=2560&q=80
   blur: sm
-  brightness: 45
+  brightness: 30
   saturate: 80
 cardBlur: sm
-# Used as a narrow browser sidebar: keep max columns low so it stays readable.
-# Homepage is responsive (Tailwind breakpoints) — collapses to 1 column when narrow,
-# expands to these maxima when wide.
+# `columns` is the MAX at the widest breakpoint; Homepage collapses to fewer (down to 1)
+# as the viewport narrows — so 4 fills a wide screen yet still works as a narrow sidebar.
 layout:
   Apps:
     style: row
-    columns: 2
+    columns: 4
   Media:
     style: row
-    columns: 2
+    columns: 4
   Ops:
     style: row
-    columns: 2
+    columns: 4
   Infra:
     style: row
-    columns: 2
+    columns: 4
