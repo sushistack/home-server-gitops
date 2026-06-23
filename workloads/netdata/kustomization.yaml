@@ -18,15 +18,17 @@ resources:
   - sealedsecret.yaml          # netdata-stream: the parent/child stream.conf (shared api key)
   - sealedsecret-notify.yaml   # netdata-notify: health_alarm_notify.conf (ntfy card+button, parent only)
 
-# netdata.conf for each role → ConfigMap `netdata-config`, mounted by subPath. disableNameSuffixHash so
-# the workloads can reference the stable name. (stream.conf lives in the SealedSecret, not here.)
+# netdata.conf for each role → ConfigMap `netdata-config`, mounted by subPath. Name-suffix hash is ON
+# (the kustomize default): a conf change → new hashed name → kustomize rewrites the parent/child volume
+# refs (both in THIS kustomization) → pod template diff → ArgoCD auto-rollout. Without the hash, ArgoCD
+# updates the ConfigMap in place but never restarts the pods (subPath mounts don't live-reload, and
+# netdata reads its conf once at boot) — a silent "Synced but not in effect" trap. (stream.conf lives in
+# the SealedSecret, not here.)
 configMapGenerator:
   - name: netdata-config
     files:
       - netdata-parent.conf
       - netdata-child.conf
-generatorOptions:
-  disableNameSuffixHash: true
 
 # Only the SHARED identity here (komga/beszel rule): app.kubernetes.io/name + /component DIFFER per
 # component (parent=netdata, child=netdata-children), hand-written inline — putting `name` here would
