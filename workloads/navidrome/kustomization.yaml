@@ -3,7 +3,9 @@ kind: Kustomization
 
 resources:
   - namespace.yaml
-  - pvc.yaml                # navidrome-data (DB-class) + navidrome-music (file-class) — Prune=false/Retain
+  - pvc.yaml                # navidrome-data (DB-class) + navidrome-music (file-class, retained post-migration) — Prune=false/Retain
+  - pvc-music-local.yaml    # Session 2: node-local music PV (/mnt/manga/music) shared w/ lidarr; deployment repointed here
+
   - configmap.yaml          # navidrome-config: non-secret ND_* env (envFrom: configMapRef)
   - deployment.yaml
   - service.yaml

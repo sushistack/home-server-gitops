@@ -1,0 +1,50 @@
+# Session 2 (music migration) — Navidrome's music library moves OFF Longhorn (navidrome-music) onto the
+# SAME node-local disk Lidarr/slskd fill, so the auto-collected FLACs appear in Navidrome with no copy.
+# A `local` PV has ONE claimRef/namespace, so Navidrome gets its OWN PV+PVC pointing at the SAME host
+# path /mnt/manga/music as lidarr-music-local — both bind the one directory; nodeAffinity co-locates
+# Navidrome onto k3s-cp-1 too. Mirrors the komga pvc-manga-local shape.
+#
+# 🔴 CUTOVER ORDER (see workloads/lidarr/runbook.md): COPY the current navidrome-music contents to
+# /mnt/manga/music BEFORE the deployment repoint syncs, or Navidrome serves an empty library. The old
+# navidrome-music Longhorn PVC is kept (Retain) for rollback/data-safety.
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: navidrome-music-local
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false   # never let ArgoCD delete the PV binding to real data
+spec:
+  capacity:
+    storage: 200Gi          # the shared disk size (informational for local volumes; grow the disk to expand)
+  accessModes:
+    - ReadWriteMany         # shares the dir with lidarr/slskd (co-located on the node)
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  local:
+    path: /mnt/manga/music
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: ["k3s-cp-1"]
+  claimRef:
+    namespace: navidrome
+    name: navidrome-music-local
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: navidrome-music-local
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: navidrome-music-local   # bind to the static local PV above (1:1 via claimRef)
+  resources:
+    requests:
+      storage: 200Gi

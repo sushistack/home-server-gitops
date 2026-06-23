@@ -78,5 +78,8 @@ spec:
           persistentVolumeClaim:
             claimName: navidrome-data
         - name: music
+          # Session 2 migration: repointed from navidrome-music (Longhorn) to the node-local PV shared
+          # with Lidarr/slskd (/mnt/manga/music). The local PV's nodeAffinity now pins navidrome to
+          # k3s-cp-1. 🔴 Copy the library to /mnt/manga/music BEFORE this syncs (runbook), else empty.
           persistentVolumeClaim:
-            claimName: navidrome-music
+            claimName: navidrome-music-local
