@@ -77,7 +77,7 @@
         icon: semaphore.png
         description: Ansible Semaphore
     - traefik:
-        href: https://${SECRET:DOMAIN_TRAEFIK}
+        href: https://${SECRET:DOMAIN_TRAEFIK}/dashboard/
         icon: traefik.png
         description: Ingress dashboard
 
