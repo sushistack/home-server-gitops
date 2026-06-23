@@ -3,6 +3,16 @@ title: Homelab
 theme: dark
 color: slate
 headerStyle: clean
+# Glassmorphism look (screenshot): background photo + translucent blurred cards.
+# Native Homepage feature — no plugin/custom CSS. Background is loaded by the BROWSER
+# (CSS background-image), not the pod, so a public URL needs zero cluster egress/upload.
+# Swap the URL to taste; brightness darkens it so tile text stays readable.
+background:
+  image: https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=2560&q=80
+  blur: sm
+  brightness: 45
+  saturate: 80
+cardBlur: sm
 # Used as a narrow browser sidebar: keep max columns low so it stays readable.
 # Homepage is responsive (Tailwind breakpoints) — collapses to 1 column when narrow,
 # expands to these maxima when wide.
