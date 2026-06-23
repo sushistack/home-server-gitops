@@ -1,0 +1,103 @@
+# Session 2 — slskd: headless Soulseek daemon = the REAL FLAC download source. Runs as uid 1000 (same
+# as lidarr) so files it writes into the shared library are owned 1000 and Lidarr imports them cleanly.
+# A freshly-provisioned Longhorn /app mounts root:root -> chown it once before start (the suwayomi
+# data-fix pattern). The music PV is pre-owned 1000 at disk-prep, NOT chowned here (it's 200G).
+#
+# Config: non-secret slskd.yml from the ConfigMap (read-only at /app/slskd.yml); Soulseek creds via env
+# from the slskd-soulseek SealedSecret (env OVERRIDES yaml in slskd). Downloads land in
+# /mnt/manga/music/.incoming (child of the shared music volume) -> same-fs Lidarr hardlink import.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slskd
+  labels:
+    app.kubernetes.io/name: slskd
+    app.kubernetes.io/component: download-source
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 180
+  strategy:
+    type: Recreate          # single-writer /app (slskd.db) -> never two pods at once
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: slskd
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: slskd
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsUser: 1000      # match lidarr so imported files are uid-1000 owned; /app chowned below
+      initContainers:
+        - name: data-fix
+          image: busybox:1.36
+          command:
+            - sh
+            - -xc
+            - |
+              d=/app
+              owner="$(stat -c %u "$d")"
+              if [ "$owner" != "1000" ]; then
+                echo "=====> Fixing $d ownership to uid 1000"
+                chown -R 1000:1000 "$d"
+              else
+                echo "=====> Nothing to do for $d"
+              fi
+          securityContext:
+            runAsUser: 0      # chown needs root; the app container then runs as 1000
+          volumeMounts:
+            - name: config
+              mountPath: /app
+      containers:
+        - name: slskd
+          # slskd/slskd — digest-pinned (AR29; :latest is floating). Re-resolve on a deliberate bump:
+          #   docker buildx imagetools inspect slskd/slskd:latest
+          image: slskd/slskd@sha256:ab9ed50e028b524cefdb7c1dd8ebca368a076e18441ee8ac2326473eb850b4c3  # latest @ 2026-06-23
+          ports:
+            - containerPort: 5030   # web UI / API (HTTP)
+            - containerPort: 50300  # Soulseek peer listen (no inbound port-forward; server relay is fine)
+          env:
+            - name: TZ
+              value: Asia/Seoul
+          envFrom:
+            - secretRef:
+                name: slskd-soulseek   # SLSKD_SLSK_USERNAME / SLSKD_SLSK_PASSWORD (override slskd.yml)
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /
+              port: 5030
+            failureThreshold: 40
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 5030
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 5030
+          volumeMounts:
+            - name: config
+              mountPath: /app                       # slskd.db + state on Longhorn
+            - name: config-yml
+              mountPath: /app/slskd.yml
+              subPath: slskd.yml                     # non-secret config overlaid read-only
+            - name: music
+              mountPath: /mnt/manga/music            # downloads -> /mnt/manga/music/.incoming, READ-WRITE
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: slskd-config
+        - name: config-yml
+          configMap:
+            name: slskd-yml
+        - name: music
+          persistentVolumeClaim:
+            claimName: lidarr-music-local

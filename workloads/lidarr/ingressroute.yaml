@@ -1,0 +1,88 @@
+# Session 2 — lidarr + slskd UIs are BOTH INTERNAL = behind CF Access (Google SSO). The external-dns
+# target annotation publishes each host to CF DNS pointing at the shared cloudflared tunnel; CF Access
+# is the gate (configured on the CF side). soularr has no route (no UI). This is the suwayomi INTERNAL
+# block in workloads/komga/ingressroute.yaml verbatim, tokenized per host.
+#
+# traefik.io/v1alpha1 (v3) — the old traefik.containo.us API silently fails.
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: lidarr-redirect-https
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+# lidarr HTTPS (websecure :443) — INTERNAL.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: lidarr
+  annotations:
+    # behind CF Access (Google SSO). Public record so Access can gate it.
+    external-dns.alpha.kubernetes.io/target: 761ca633-e9d6-4af8-8508-727bba00f0a9.cfargotunnel.com
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`${SECRET:DOMAIN_LIDARR}`)
+      kind: Rule
+      services:
+        - name: lidarr
+          port: 8686
+  tls:
+    secretName: lidarr-tls
+---
+# lidarr HTTP (web :80) — 301 to HTTPS.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: lidarr-redirect
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`${SECRET:DOMAIN_LIDARR}`)
+      kind: Rule
+      middlewares:
+        - name: lidarr-redirect-https
+      services:
+        - name: lidarr
+          port: 8686
+---
+# slskd HTTPS (websecure :443) — INTERNAL.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: slskd
+  annotations:
+    external-dns.alpha.kubernetes.io/target: 761ca633-e9d6-4af8-8508-727bba00f0a9.cfargotunnel.com
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`${SECRET:DOMAIN_SLSKD}`)
+      kind: Rule
+      services:
+        - name: slskd
+          port: 5030
+  tls:
+    secretName: slskd-tls
+---
+# slskd HTTP (web :80) — 301 to HTTPS (reuses lidarr's redirect middleware, same ns).
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: slskd-redirect
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`${SECRET:DOMAIN_SLSKD}`)
+      kind: Rule
+      middlewares:
+        - name: lidarr-redirect-https
+      services:
+        - name: slskd
+          port: 5030

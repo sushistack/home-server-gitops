@@ -1,0 +1,75 @@
+# Session 2 — Lidarr: the library manager (monitor artists -> track missing/wanted; MusicBrainz tagging
+# + organization). The wishlist soularr reads. LinuxServer image: runs as root via s6, drops to
+# PUID/PGID and chowns /config itself, so no data-fix initContainer needed for /config.
+#
+# 🔴 LIBRARY PATH: the music library (node-local PV) mounts at /mnt/manga/music in lidarr AND slskd at
+# the SAME path, so the slskd download dir (/mnt/manga/music/.incoming) is identical across both pods
+# and soularr's config — Lidarr imports by hardlink with NO remote-path-mapping. Root folder in the
+# Lidarr UI = /mnt/manga/music. The PV dir is pre-owned uid 1000 at disk-prep time (see runbook).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lidarr
+  labels:
+    app.kubernetes.io/name: lidarr
+    app.kubernetes.io/component: library-manager
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 180
+  strategy:
+    type: Recreate          # SQLite single-writer data dir (/config) -> never two pods at once
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lidarr
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lidarr
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: lidarr
+          # lscr.io/linuxserver/lidarr — digest-pinned (AR29; :latest is floating). Re-resolve on a
+          # deliberate bump:  docker buildx imagetools inspect lscr.io/linuxserver/lidarr:latest
+          image: lscr.io/linuxserver/lidarr@sha256:20025a94077f6f9ad523fbc83a201e35e766f4b2135e92237a41aa5fd51015ce  # latest @ 2026-06-23
+          ports:
+            - containerPort: 8686
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: Asia/Seoul
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /ping
+              port: 8686
+            failureThreshold: 40
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 8686
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 8686
+          volumeMounts:
+            - name: config
+              mountPath: /config           # lidarr.db + logs.db on Longhorn (LSIO chowns to PUID)
+            - name: music
+              mountPath: /mnt/manga/music  # library root + import target, READ-WRITE; same path as slskd
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: lidarr-config
+        - name: music
+          persistentVolumeClaim:
+            claimName: lidarr-music-local

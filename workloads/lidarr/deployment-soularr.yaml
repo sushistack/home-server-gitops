@@ -1,0 +1,66 @@
+# Session 2 — soularr (community): reads Lidarr wanted/missing -> searches + downloads via the slskd
+# API -> tells Lidarr to import. NO UI, NO media mount (it orchestrates over HTTP only — Lidarr and
+# slskd already share the library volume, so soularr never touches files). Runs an in-process loop
+# (interval in config.ini); the mrusse08/soularr image loops on its own, so this is a long-lived pod.
+#
+# config.ini (Lidarr URL+API key, slskd URL+download path) is SECRET (Lidarr API key) -> overlaid from
+# the soularr-config SealedSecret at /data/config.ini; the soularr-data PVC holds run state + logs.
+# No port -> no readiness/liveness; a startup exec guard asserts config.ini is present (the loop can't
+# run without it). See runbook for the 2-stage reseal (the Lidarr API key only exists after Lidarr boot).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: soularr
+  labels:
+    app.kubernetes.io/name: soularr
+    app.kubernetes.io/component: bridge
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 180
+  strategy:
+    type: Recreate          # single working dir (run lock/state) -> never two pods at once
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: soularr
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: soularr
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: soularr
+          # mrusse08/soularr — digest-pinned (AR29; :latest is floating). Re-resolve on a deliberate bump:
+          #   docker buildx imagetools inspect mrusse08/soularr:latest
+          image: mrusse08/soularr@sha256:a46d4b0af667e54e816e2058ec574a03337519ee74476e17875d4c5cb3a3c288  # latest @ 2026-06-23
+          env:
+            - name: TZ
+              value: Asia/Seoul
+            - name: WEBUI_ENABLED
+              value: "false"   # image starts a webui by default; we expose no route, so disable it
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          # No port to httpGet, so a startup guard via exec: the #1 failure is a missing/placeholder
+          # config.ini (the loop can't run without it). sh+test exist in the image; config dir is /data.
+          startupProbe:
+            exec:
+              command: ["sh", "-c", "test -s /data/config.ini"]
+            failureThreshold: 30
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data                 # working dir: run state + logs
+            - name: config
+              mountPath: /data/config.ini
+              subPath: config.ini              # secret config overlaid read-only
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: soularr-data
+        - name: config
+          secret:
+            secretName: soularr-config

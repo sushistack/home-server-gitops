@@ -1,0 +1,53 @@
+# Session 2 — the music library lives on the SAME dedicated 200G disk as the manga library
+# (k3s-cp-1, /mnt/manga, the Story 5.6 node-local pattern), in the subdir /mnt/manga/music. Off
+# Longhorn via a static `local` PV — NEVER RWX-Longhorn (komga pvc-manga-local.yaml is the reference).
+#
+# A `local` PV REQUIRES nodeAffinity (k8s enforces it), which PINS every consumer pod to k3s-cp-1 —
+# so lidarr + slskd auto-co-locate here, both mounting this RWX PV read-write (lidarr = library root +
+# import; slskd = downloads into /mnt/manga/music/.incoming, same fs -> Lidarr hardlink import).
+#
+# ⚠️ SHARED PHYSICAL DISK with the manga library (komga-manga-local, same /mnt/manga). Capacity + SPOF
+# are shared (currently ~90G of 200G used, headroom OK). Grow online: `qm resize 101 scsi2 +Ng` ->
+# `growpart`+`resize2fs` on k3s-cp-1 (see runbook.md). Navidrome shares the SAME path via its OWN PV
+# (workloads/navidrome/pvc-music-local.yaml) — a `local` PV has one claimRef/ns, so each ns gets its own.
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: lidarr-music-local
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false   # never let ArgoCD delete the PV binding to real data
+spec:
+  capacity:
+    storage: 200Gi          # the shared disk size (informational for local volumes; grow the disk to expand)
+  accessModes:
+    - ReadWriteMany         # lidarr (rw) + slskd (rw) both mount — legal for a local PV when co-located on the node
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  local:
+    path: /mnt/manga/music
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: ["k3s-cp-1"]
+  claimRef:
+    namespace: lidarr
+    name: lidarr-music-local
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lidarr-music-local
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: lidarr-music-local   # bind to the static local PV above (1:1 via claimRef)
+  resources:
+    requests:
+      storage: 200Gi

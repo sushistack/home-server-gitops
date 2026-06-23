@@ -1,0 +1,34 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Session 2 — ONE logical workload, THREE components (lidarr library-manager + slskd download-source +
+# soularr bridge), ONE namespace, sharing the node-local music library (the komga/suwayomi multi-
+# component shape). Generated as ONE Application by the `workloads` ApplicationSet (HTTP-only -> not
+# excluded). Music library co-locates all consumers on k3s-cp-1 via the local PV's nodeAffinity.
+resources:
+  - namespace.yaml
+  - pvc-music-local.yaml   # static node-local PV -> k3s-cp-1:/mnt/manga/music (RWX, off-Longhorn; shares the manga disk)
+  - pvc-config.yaml        # lidarr-config + slskd-config + soularr-data (small Longhorn RWO)
+  - configmap.yaml         # slskd.yml non-secret config (auth disabled; download dir on the shared volume)
+  - deployment-lidarr.yaml
+  - deployment-slskd.yaml
+  - deployment-soularr.yaml
+  - services.yaml          # lidarr (8686) + slskd (5030) ClusterIP
+  - ingressroute.yaml      # lidarr + slskd both INTERNAL (CF Access); hosts tokenized
+  - certificate.yaml       # per-host letsencrypt-prod certs -> lidarr-tls / slskd-tls
+  - sealedsecret-slskd.yaml    # slskd-soulseek (Soulseek creds) — 🔴 PLACEHOLDER, reseal before first sync
+  - sealedsecret-soularr.yaml  # soularr-config (config.ini w/ Lidarr API key) — 🔴 PLACEHOLDER, 2-stage reseal
+# NOT included on purpose:
+#   backup-cronjob.yaml  -> RECOMMENDED but needs the operator-sealed `lidarr-backup-r2`. Add this line
+#                           AND the sealed R2 secret AFTER sealing, else the base references a missing Secret.
+
+# `labels:` (never commonLabels — pollutes selectors; never namePrefix — breaks the name+ns SealedSecret
+# binding). Only the SHARED identity here; app.kubernetes.io/name + /component DIFFER per component
+# (hand-written inline on each resource; every Service selector targets `name`). part-of: lidarr ties
+# the three components to one logical service.
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/instance: lidarr
+      app.kubernetes.io/part-of: lidarr
+      app.kubernetes.io/managed-by: argocd

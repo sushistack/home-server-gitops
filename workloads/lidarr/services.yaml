@@ -1,0 +1,27 @@
+# Session 2 — ClusterIPs. UIs/APIs are reached via the Traefik IngressRoute (INTERNAL/CF Access);
+# soularr has no Service (no port). slskd's port 5030 is both its UI and the API soularr calls.
+apiVersion: v1
+kind: Service
+metadata:
+  name: lidarr
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: lidarr
+  ports:
+    - name: http
+      port: 8686
+      targetPort: 8686
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: slskd
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: slskd
+  ports:
+    - name: http
+      port: 5030
+      targetPort: 5030

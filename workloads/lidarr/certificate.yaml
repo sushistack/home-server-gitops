@@ -1,0 +1,27 @@
+# Session 2 — per-host production TLS (the Epic 4 pattern). cert-manager issues a browser-trusted cert
+# per host from letsencrypt-prod (DNS-01) into a per-app Secret served by the IngressRoute. DNS-01
+# needs no public reachability, so these INTERNAL-only hosts get real certs too.
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lidarr-tls
+spec:
+  secretName: lidarr-tls
+  dnsNames:
+    - "${SECRET:DOMAIN_LIDARR}"
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: slskd-tls
+spec:
+  secretName: slskd-tls
+  dnsNames:
+    - "${SECRET:DOMAIN_SLSKD}"
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer

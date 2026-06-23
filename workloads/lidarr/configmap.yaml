@@ -1,0 +1,31 @@
+# Session 2 — slskd NON-SECRET config (slskd.yml). Soulseek credentials are NOT here — they arrive as
+# env (SLSKD_SLSK_USERNAME/PASSWORD) from the slskd-soulseek SealedSecret, and env OVERRIDES yaml in
+# slskd. Mounted read-only at /app/slskd.yml (subPath) over the slskd-config PVC. Named slskd-yml (NOT
+# slskd-config) to avoid confusion with the same-named PVC.
+#
+# web.authentication.disabled: true — the UI/API are gated by CF Access (Google SSO) at the edge and
+# soularr calls the API in-cluster (ClusterIP), so slskd's own auth would only get in the way. This is
+# the deliberate INTERNAL stance (same as the other CF-Access-fronted admin UIs, e.g. netdata).
+# remoteConfiguration: false (default) — slskd never rewrites this file, so the read-only mount is safe.
+#
+# directories: BOTH incomplete and downloads live on the shared music volume so completion is an atomic
+# same-fs rename (NOT a cross-device copy) AND in-progress FLACs don't fill the small Longhorn /app PVC.
+# Both are dot-prefixed (.incomplete/.incoming) so Navidrome's scanner skips them (hidden entries) and
+# never indexes partial downloads; Lidarr imports completed files OUT of .incoming into the library.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slskd-yml
+data:
+  slskd.yml: |
+    web:
+      authentication:
+        disabled: true
+    remote_configuration: false
+    directories:
+      incomplete: /mnt/manga/music/.incomplete
+      downloads: /mnt/manga/music/.incoming
+    shares:
+      directories: []
+    soulseek:
+      listen_port: 50300

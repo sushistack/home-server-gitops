@@ -1,0 +1,68 @@
+# Session 2 (RECOMMENDED, NON-BLOCKING) — online sqlite3 .backup of Lidarr's config DB to R2, the
+# komga/Story-4.1 actor verbatim (only paths changed). Backs up the library/wishlist/quality state
+# (lidarr.db). Does NOT back up the music library (re-acquirable via the soularr pipeline; file-class ->
+# Longhorn snapshot only, never R2 — same rule as navidrome-music).
+#
+# 🔴 OPERATOR: references a SealedSecret `lidarr-backup-r2` that must be sealed against the LIVE cluster
+# key (reuse the same bucket-scoped R2 cred as the other k3s service backups). Until it is sealed AND
+# this file + the secret are added to kustomization.yaml, the backup does NOT run. Left OUT of
+# kustomization.yaml on purpose so the base stays ArgoCD-Healthy without the live secret.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: lidarr-backup
+spec:
+  schedule: "40 */6 * * *"
+  timeZone: Asia/Seoul
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: lidarr-backup
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          # lidarr-config is RWO -> Longhorn attaches it to lidarr's node; co-schedule there to mount it.
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: lidarr
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: backup
+              image: alpine:3.20   # PIN to a digest at hardening (AR29)
+              command:
+                - /bin/sh
+                - -ceu
+                - |
+                  apk add --no-cache sqlite rclone ca-certificates tzdata
+                  ts=$(date +%Y-%m-%dT%H-%M-%S)
+                  sqlite3 /config/lidarr.db ".backup /scratch/lidarr.db"
+                  tar -C /scratch -czf "/scratch/lidarr-${ts}.tar.gz" lidarr.db
+                  rclone copy "/scratch/lidarr-${ts}.tar.gz" "r2:homelab-k3s-services-backup/lidarr/"
+                  rclone delete --min-age 720h "r2:homelab-k3s-services-backup/lidarr/" || true
+              env:
+                - name: RCLONE_CONFIG_R2_NO_CHECK_BUCKET
+                  value: "true"
+              envFrom:
+                - secretRef:
+                    name: lidarr-backup-r2
+              volumeMounts:
+                - name: config
+                  mountPath: /config   # RW: online .backup needs -wal/-shm
+                - name: scratch
+                  mountPath: /scratch
+          volumes:
+            - name: config
+              persistentVolumeClaim:
+                claimName: lidarr-config
+            - name: scratch
+              emptyDir: {}

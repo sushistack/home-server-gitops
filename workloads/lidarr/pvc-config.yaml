@@ -1,0 +1,46 @@
+# Session 2 — the small, precious app state goes on Longhorn (NOT the local music disk): lidarr's
+# SQLite DBs (lidarr.db + logs.db: library/wishlist/quality state), slskd's app dir (slskd.db + state),
+# and soularr's working dir (config.ini + run state/logs). RWO -> each Deployment is strategy:Recreate
+# (SQLite single-writer/WAL). Prune=false + Retain: ArgoCD/Longhorn never delete real state on removal.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lidarr-config
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi   # lidarr.db + logs.db + metadata cache; grow via PR
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: slskd-config
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi   # slskd.db (peer/search/transfer state) + incomplete downloads; grow via PR
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: soularr-data
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi   # soularr working dir: run state + logs (config.ini overlaid from the SealedSecret)
