@@ -214,13 +214,16 @@ data:
     # rclone is apk-added on demand (same approach as the backup actors). The cred is literally an
     # rclone remote config (RCLONE_CONFIG_R2_*), so `r2:` works with zero extra setup.
     # ponytail: rclone size + ONE recursive lsjson per bucket; jq does the per-prefix math. No
-    #   Cloudflare GraphQL R2-analytics API (MB-scale DB dumps — listing is instant). Single global
-    #   staleness threshold (every backup actor runs */6h — per-svc intervals would be over-engineering).
+    #   Cloudflare GraphQL R2-analytics API (MB-scale DB dumps — listing is instant). One global
+    #   staleness threshold (most actors run */6h) + a daily-cadence exception list (R2_DAILY_SVCS,
+    #   anytype's 24h RPO) — a per-svc table for two services would be over-engineering.
     #   The date-parse + group-by jq logic is mirrored in test-r2-parse.sh — keep the two in sync.
     if [ -n "${RCLONE_CONFIG_R2_TYPE:-}" ]; then
       if apk add --no-cache rclone >/dev/null 2>&1; then
         R2_THRESHOLD_GB="${R2_THRESHOLD_GB:-8}"        # alert before the ~10 GB R2 free tier
         R2_STALE_HOURS="${R2_STALE_HOURS:-13}"         # 2x the 6h backup cadence + headroom; newer = healthy
+        R2_STALE_HOURS_DAILY="${R2_STALE_HOURS_DAILY:-27}"            # daily-cadence services: 24h + headroom (see R2_DAILY_SVCS)
+        R2_DAILY_SVCS="${R2_DAILY_SVCS:-anytype anytype-heart}"      # svcs on daily (not 6h) cadence — anytype relaxed to 24h RPO (gitops c1c11c1)
         R2_RETENTION_DAYS="${R2_RETENTION_DAYS:-35}"   # oldest object older than this => rotation (4.8 `|| true`) broke
         SVC_BUCKET=homelab-k3s-services-backup
         LH_BUCKET=homelab-k3s-backup
@@ -256,15 +259,17 @@ data:
           # (b) freshness (broke backup actor) + (c) rotation (broke retention) — ONE recursive listing
           #     of the services bucket, grouped by <svc>/ prefix. Longhorn's bucket uses its own layout
           #     (not <svc>/), so it gets the capacity check only; its job health is the RecurringJob's.
-          stale=$(( R2_STALE_HOURS * 3600 )); ret=$(( R2_RETENTION_DAYS * 86400 ))
+          stale=$(( R2_STALE_HOURS * 3600 )); staled=$(( R2_STALE_HOURS_DAILY * 3600 )); ret=$(( R2_RETENTION_DAYS * 86400 ))
           rclone lsjson -R --files-only "r2:$SVC_BUCKET" 2>/dev/null \
-          | jq -r --argjson now "$now" --argjson stale "$stale" --argjson ret "$ret" '
+          | jq -r --argjson now "$now" --argjson stale "$stale" --argjson staled "$staled" --arg daily "$R2_DAILY_SVCS" --argjson ret "$ret" '
               # rclone ModTime: 2026-06-19T10:00:00.123456789Z -> strip fractional secs -> ISO8601 epoch
               def epoch: sub("\\.[0-9]+Z$";"Z") | fromdateiso8601;
-              [ .[] | select(.Path | contains("/")) | {svc: (.Path|split("/")[0]), t: (.ModTime|epoch)} ]
+              ($daily | split(" ")) as $dl
+              | [ .[] | select(.Path | contains("/")) | {svc: (.Path|split("/")[0]), t: (.ModTime|epoch)} ]
               | group_by(.svc)[]
               | { svc: .[0].svc, newest: (map(.t)|max), oldest: (map(.t)|min) }
-              | ( if ($now - .newest) > $stale then "STALE\t\(.svc)\t\((($now-.newest)/3600)|floor)" else empty end ),
+              | (.svc) as $s | (if ($dl | index($s)) then $staled else $stale end) as $th   # per-svc staleness: daily svcs get the relaxed window
+              | ( if ($now - .newest) > $th then "STALE\t\(.svc)\t\((($now-.newest)/3600)|floor)" else empty end ),
                 ( if ($now - .oldest) > $ret  then "OLD\t\(.svc)\t\((($now-.oldest)/86400)|floor)"  else empty end )' \
           | while IFS="$(printf '\t')" read -r kind svc age; do
               if [ "$kind" = "STALE" ]; then

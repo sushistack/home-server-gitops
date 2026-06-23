@@ -49,6 +49,10 @@ spec:
                   value: "8"                                    # alert before the ~10 GB R2 free tier
                 - name: R2_STALE_HOURS
                   value: "13"                                   # 2x the 6h backup cadence + headroom
+                - name: R2_STALE_HOURS_DAILY
+                  value: "27"                                   # daily-cadence svcs (24h RPO + headroom)
+                - name: R2_DAILY_SVCS
+                  value: "anytype anytype-heart"                # relaxed to daily backup (gitops c1c11c1)
                 - name: R2_RETENTION_DAYS
                   value: "35"                                   # oldest object older than this => rotation broke
                 # NFR15b (Story 5.1) — k3s version pin baked from versions.yaml (the cluster can't read
