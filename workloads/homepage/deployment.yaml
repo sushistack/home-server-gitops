@@ -13,6 +13,18 @@ spec:
       labels:
         app.kubernetes.io/name: homepage
     spec:
+      # Homepage v1.13.2 bootstraps missing config files + a logs dir INTO /app/config at
+      # startup, so that dir must be writable. Seed a writable emptyDir from the (read-only)
+      # ConfigMap; Homepage then fills in the rest. ConfigMap hash still drives auto-rollout.
+      initContainers:
+        - name: seed-config
+          image: busybox:1.36
+          command: ["sh", "-c", "cp /config-src/* /app/config/"]
+          volumeMounts:
+            - name: config-src
+              mountPath: /config-src
+            - name: config
+              mountPath: /app/config
       containers:
         - name: homepage
           # Re-resolve on deliberate bump:
@@ -35,9 +47,7 @@ spec:
                 optional: true
           volumeMounts:
             - name: config
-              mountPath: /app/config           # config files from the read-only ConfigMap
-            - name: logs
-              mountPath: /app/config/logs       # writable: Homepage mkdir's this at startup (fatal if RO)
+              mountPath: /app/config            # writable emptyDir seeded by the init container
           startupProbe:
             httpGet:
               path: /
@@ -59,8 +69,8 @@ spec:
             limits:
               memory: 256Mi
       volumes:
-        - name: config
+        - name: config-src
           configMap:
             name: homepage-config
-        - name: logs
+        - name: config
           emptyDir: {}
