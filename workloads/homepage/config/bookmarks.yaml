@@ -1,4 +1,11 @@
 ---
+- Links:
+    - GitOps repo:
+        - icon: github.png
+          href: https://github.com/sushistack/homelab-gitops
+    - Cloudflare:
+        - icon: cloudflare.png
+          href: https://cloudflare.com
 - Reference:
     - Homepage docs:
         - abbr: HP

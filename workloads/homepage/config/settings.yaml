@@ -16,7 +16,13 @@ cardBlur: sm
 # `columns` is the MAX at the widest breakpoint; Homepage collapses to fewer (down to 1)
 # as the viewport narrows — so 4 fills a wide screen yet still works as a narrow sidebar.
 layout:
-  Apps:
+  Tools:
+    style: row
+    columns: 4
+  Reads:
+    style: row
+    columns: 4
+  Monitoring:
     style: row
     columns: 4
   Media:

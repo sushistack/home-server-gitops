@@ -3,23 +3,11 @@
 # at sync (from argocd-render-tokens). `kustomize build` leaves them literal (expected).
 # NOTE: never write a real token shape here — this comment ships inside the ConfigMap and
 # an unresolved token shape would trip the render fail-closed guard.
-- Apps:
+- Tools:
     - notify:
         href: https://${SECRET:DOMAIN_NTFY_WEB}
         icon: ntfy.png
         description: ntfy notifications
-    - music:
-        href: https://${SECRET:DOMAIN_NAVIDROME}
-        icon: navidrome.png
-        description: Navidrome
-    - keep:
-        href: https://${SECRET:DOMAIN_KEEP}
-        icon: karakeep.png
-        description: Karakeep
-    - rss:
-        href: https://${SECRET:DOMAIN_RSS}
-        icon: miniflux.png
-        description: Miniflux
     - n8n:
         href: https://${SECRET:DOMAIN_N8N}
         icon: n8n.png
@@ -33,15 +21,15 @@
         icon: excalidraw.png
         description: Excalidraw
 
-- Media:
-    - jellyfin:
-        href: https://${SECRET:DOMAIN_JELLYFIN}
-        icon: jellyfin.png
-        description: Media server
-    - immich:
-        href: https://${SECRET:DOMAIN_IMMICH}
-        icon: immich.png
-        description: Photos
+- Reads:
+    - keep:
+        href: https://${SECRET:DOMAIN_KEEP}
+        icon: karakeep.png
+        description: Karakeep
+    - rss:
+        href: https://${SECRET:DOMAIN_RSS}
+        icon: miniflux.png
+        description: Miniflux
     - comics:
         href: https://${SECRET:DOMAIN_KOMGA}
         icon: komga.png
@@ -55,15 +43,35 @@
         icon: calibre.png
         description: Calibre
 
+- Monitoring:
+    - kuma:
+        href: https://${SECRET:DOMAIN_KUMA}
+        icon: uptime-kuma.png
+        description: Uptime Kuma
+    - netdata:
+        href: https://${SECRET:DOMAIN_NETDATA}
+        icon: netdata.png
+        description: Netdata
+
+- Media:
+    - jellyfin:
+        href: https://${SECRET:DOMAIN_JELLYFIN}
+        icon: jellyfin.png
+        description: Media server
+    - immich:
+        href: https://${SECRET:DOMAIN_IMMICH}
+        icon: immich.png
+        description: Photos
+    - music:
+        href: https://${SECRET:DOMAIN_NAVIDROME}
+        icon: navidrome.png
+        description: Navidrome
+
 - Ops:
     - argocd:
         href: https://${SECRET:DOMAIN_ARGOCD}
         icon: argo-cd.png
         description: GitOps
-    - kuma:
-        href: https://${SECRET:DOMAIN_KUMA}
-        icon: uptime-kuma.png
-        description: Uptime Kuma
     - semaphore:
         href: https://${SECRET:DOMAIN_SEMAPHORE}
         icon: semaphore.png
@@ -72,10 +80,6 @@
         href: https://${SECRET:DOMAIN_TRAEFIK}
         icon: traefik.png
         description: Ingress dashboard
-    - netdata:
-        href: https://${SECRET:DOMAIN_NETDATA}
-        icon: netdata.png
-        description: Netdata
 
 - Infra:
     - proxmox:
