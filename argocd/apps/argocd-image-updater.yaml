@@ -23,7 +23,9 @@ spec:
   source:
     repoURL: https://argoproj.github.io/argo-helm
     chart: argocd-image-updater
-    targetRevision: 1.2.2   # == versions.yaml argocd-image-updater.chartVersion (appVersion v1.2.1)
+    targetRevision: 0.14.0   # == versions.yaml argocd-image-updater.chartVersion (appVersion v0.17.0)
+    # CLASSIC (annotation-driven) line — NOT the 1.x CRD operator. Config lives on the ntfy-web
+    # Application's annotations (argocd/apps/ntfy-web.yaml); no ImageUpdater CR needed.
     helm:
       values: |
         # Discover Applications straight from the cluster — no argocd API-server token to manage.
@@ -32,9 +34,8 @@ spec:
         config:
           logLevel: info
           # Commit identity for the write-back commits this makes to homelab-gitops.
-          git:
-            user: argocd-image-updater
-            email: argocd-image-updater@eli.kr
+          gitCommitUser: argocd-image-updater
+          gitCommitMail: argocd-image-updater@eli.kr
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd

@@ -71,8 +71,10 @@ argocd-image-updater:
   repo: https://argoproj.github.io/argo-helm
   chart: argocd-image-updater
   # renovate: datasource=helm depName=argocd-image-updater registryUrl=https://argoproj.github.io/argo-helm
-  chartVersion: 1.2.2      # -> appVersion v1.2.1
-  appVersion: v1.2.1
+  # The 1.x line is a CRD-based operator (needs an ImageUpdater CR per app); the CLASSIC line is
+  # annotation-driven (config lives on the Application CR — what we use). Stay on the last classic.
+  chartVersion: 0.14.0     # -> appVersion v0.17.0
+  appVersion: v0.17.0
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Workload image registry (Story 5.3 — completes the Version SSOT, AC1).
