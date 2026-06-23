@@ -10,6 +10,7 @@ headerStyle: clean
 background:
   # Own image committed to this repo (assets/); browser fetches it via raw GitHub.
   image: https://raw.githubusercontent.com/sushistack/homelab-gitops/master/workloads/homepage/assets/dark-background.png
+  blur: sm
   brightness: 50
   saturate: 80
 cardBlur: sm
