@@ -62,6 +62,18 @@ sealed-secrets:
   appVersion: v0.37.0
   kubeseal: v0.37.0        # local CLI pin — keep in lockstep with appVersion on any bump
 
+argocd-image-updater:
+  # Auto-digest follow for ntfy-web ONLY (our own app; CI repins :latest every main push). Tracks
+  # the digest :latest points to and writes it back to git → ArgoCD syncs. Every OTHER image stays
+  # on the manual versions.yaml mirror below (scoped via per-Application annotations). Vendor
+  # argo-helm chart referenced as an ArgoCD `source` (argocd/apps/argocd-image-updater.yaml) — NOT
+  # mirrored. ponytail: one tracked image doesn't justify retiring the manual mirror for the rest.
+  repo: https://argoproj.github.io/argo-helm
+  chart: argocd-image-updater
+  # renovate: datasource=helm depName=argocd-image-updater registryUrl=https://argoproj.github.io/argo-helm
+  chartVersion: 1.2.2      # -> appVersion v1.2.1
+  appVersion: v1.2.1
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Workload image registry (Story 5.3 — completes the Version SSOT, AC1).
 #

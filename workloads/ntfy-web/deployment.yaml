@@ -23,9 +23,10 @@ spec:
       containers:
         - name: ntfy-web
           # Built + pushed by the ntfy-web repo CI (.github/workflows/docker-publish.yml).
-          # Multi-arch index digest captured 2026-06-20 via
-          #   docker buildx imagetools inspect ghcr.io/sushistack/ntfy-web:latest
-          # Upgrade = re-inspect, bump this digest via PR (GitOps-revertible). NEVER :latest (AR29).
+          # Argo CD Image Updater (argocd/apps/ntfy-web.yaml) now auto-follows the digest :latest
+          # resolves to and writes it into workloads/ntfy-web/kustomization.yaml `images:`, which
+          # OVERRIDES this ref. So this inline digest is just the bootstrap base + the name kustomize
+          # matches on — the live digest lives in kustomization.yaml. NEVER :latest here (AR29).
           image: ghcr.io/sushistack/ntfy-web@sha256:6bce580c7b4f2f339033e2d87b190d868e913674ffba0e1ef17bf590bbbcaf33
           ports:
             - containerPort: 80

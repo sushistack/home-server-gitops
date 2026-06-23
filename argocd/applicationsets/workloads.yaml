@@ -25,6 +25,11 @@ spec:
           # argocd/apps/anytype.yaml; without this exclude BOTH would create an App named `anytype`.
           - path: workloads/anytype
             exclude: true
+          # ntfy-web is the SECOND hand-written exception: its Argo CD Image Updater config lives as
+          # annotations on the Application CR (argocd/apps/ntfy-web.yaml), which this uniform template
+          # can't carry per-app. Same dual-creation guard as anytype.
+          - path: workloads/ntfy-web
+            exclude: true
   template:
     metadata:
       name: '{{.path.basename}}'

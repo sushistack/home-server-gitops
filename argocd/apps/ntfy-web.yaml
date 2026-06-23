@@ -1,0 +1,59 @@
+# HAND-WRITTEN Application for ntfy-web — the SECOND per-directory exception (after anytype).
+#
+# WHY hand-written and not via the `workloads` ApplicationSet: Argo CD Image Updater reads its
+# config from annotations on the Application CR, and the uniform ApplicationSet template applies to
+# EVERY workload — an image-list there would (wrongly) aim the updater at all of them. So, exactly
+# like anytype: this Application lives under argocd/ (the app-of-apps root recurses argocd/ and
+# adopts it) and workloads/ntfy-web is EXCLUDED from the ApplicationSet (argocd/applicationsets/
+# workloads.yaml) so the two don't both create an Application named `ntfy-web`.
+#
+# WHAT the image-updater annotations do (controller: argocd/apps/argocd-image-updater.yaml):
+#   image-list ntfyweb=...:latest + update-strategy digest -> follow the DIGEST that :latest points
+#       to (CI repins :latest each main push). The running ref stays an @sha256 pin, never :latest.
+#   write-back-method git:secret:argocd/git-creds          -> commit the new digest to THIS repo
+#       (GitHub PAT in the git-creds Secret, see PREREQ) on branch master.
+#   write-back-target kustomization                        -> `kustomize edit set image` into
+#       workloads/ntfy-web/kustomization.yaml (an `images:` block) — NOT a hidden .argocd-source
+#       dotfile and NOT the inline deployment digest. Effective ref = that override. Revert =
+#       `git revert`, same as every other change.
+#
+# PREREQ Secrets (cannot be committed un-sealed — create with kubeseal, like anytype's ghcr-sushistack):
+#   - argocd/git-creds : GitHub PAT for the write-back push. Keys username + password:
+#       kubectl -n argocd create secret generic git-creds \
+#         --from-literal=username=sushistack --from-literal=password=<PAT repo:contents write> \
+#         --dry-run=client -o yaml \
+#       | kubeseal --controller-name sealed-secrets --controller-namespace sealed-secrets -o yaml \
+#       > argocd/apps/git-creds-sealed.yaml      # then it's adopted by the app-of-apps root
+#   - argocd/ghcr-sushistack : ONLY IF the GHCR package is PRIVATE — pull cred so the updater can
+#       READ the registry. Re-seal the existing anytype ghcr-sushistack dockerconfigjson into the
+#       argocd namespace and uncomment the pull-secret annotation below. Public package -> skip.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ntfy-web
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"   # same wave as the ApplicationSet-generated workload it replaces
+    argocd-image-updater.argoproj.io/image-list: ntfyweb=ghcr.io/sushistack/ntfy-web:latest
+    argocd-image-updater.argoproj.io/ntfyweb.update-strategy: digest
+    argocd-image-updater.argoproj.io/write-back-method: git:secret:argocd/git-creds
+    argocd-image-updater.argoproj.io/git-branch: master
+    argocd-image-updater.argoproj.io/write-back-target: kustomization
+    # PRIVATE GHCR ONLY — uncomment after sealing ghcr-sushistack into the argocd namespace:
+    # argocd-image-updater.argoproj.io/ntfyweb.pull-secret: pullsecret:argocd/ghcr-sushistack
+spec:
+  project: homelab
+  source:
+    repoURL: https://github.com/sushistack/homelab-gitops.git
+    targetRevision: HEAD
+    path: workloads/ntfy-web
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ntfy-web
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

@@ -1,0 +1,47 @@
+# Argo CD Image Updater — wave-0 platform addon (own-app auto-digest follow).
+#
+# WHY it exists: ntfy-web is OUR app; its CI repins ghcr.io/sushistack/ntfy-web:latest on every
+# main push. Rather than hand-bump the digest per push (the manual versions.yaml flow the ~14
+# VENDORED images still use), this watches the digest :latest resolves to and writes the new digest
+# back to git → ArgoCD self-heal-syncs. SCOPED to ntfy-web ONLY via per-Application annotations
+# (argocd/apps/ntfy-web.yaml); it touches no other workload's image.
+#
+# Vendor component -> Helm `source`, no chart mirroring. Version pinned in versions.yaml (SSOT).
+# Runs in the argocd namespace and discovers Applications via the k8s API
+# (--applications-api=kubernetes) so it needs NO argocd API token — only the chart's own RBAC to
+# read/patch Application CRs in this namespace, plus the git-creds Secret (argocd/apps/ntfy-web.yaml
+# header) to push the write-back commit.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-image-updater
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"   # platform addon: after argocd self (-1), before workloads (3)
+spec:
+  project: homelab
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argocd-image-updater
+    targetRevision: 1.2.2   # == versions.yaml argocd-image-updater.chartVersion (appVersion v1.2.1)
+    helm:
+      values: |
+        # Discover Applications straight from the cluster — no argocd API-server token to manage.
+        extraArgs:
+          - --applications-api=kubernetes
+        config:
+          logLevel: info
+          # Commit identity for the write-back commits this makes to homelab-gitops.
+          git:
+            user: argocd-image-updater
+            email: argocd-image-updater@eli.kr
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false   # argocd ns already exists (Ansible created it)
+      - ServerSideApply=true
