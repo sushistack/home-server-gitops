@@ -49,24 +49,25 @@ spec:
               memory: 128Mi
             limits:
               memory: 512Mi   # memory limit only — no cpu limit (avoids CFS throttling). Scans are bursty.
-          # Ports the Compose healthcheck `wget --spider http://localhost:4533/rest/ping` (AR31) to an
-          # httpGet probe. startupProbe holds liveness back until /rest/ping first answers (up to
+          # Probe the Web UI shell, not /rest/ping: the latter is a Subsonic endpoint and logs
+          # "missing parameter: u" on unauthenticated probes. startupProbe holds liveness back until
+          # the HTTP server first answers (up to
           # 30*5s = 150s): navidrome opens SQLite (+ WAL replay after an unclean stop) and may scan on
           # boot; without this guard the default liveness window can kill the pod mid-boot and crash-loop
           # it — the DB-class trap the golden path warns of.
           startupProbe:
             httpGet:
-              path: /rest/ping
+              path: /app/
               port: 4533
             failureThreshold: 30
             periodSeconds: 5
           readinessProbe:
             httpGet:
-              path: /rest/ping
+              path: /app/
               port: 4533
           livenessProbe:
             httpGet:
-              path: /rest/ping
+              path: /app/
               port: 4533
           volumeMounts:
             - name: data
