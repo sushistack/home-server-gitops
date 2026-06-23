@@ -6,7 +6,7 @@ resources:
   - namespace.yaml
   - deployment.yaml
   - service.yaml
-  - ingressroute.yaml      # INTERNAL-only (LAN); host homepage.eli.kr
+  - ingressroute.yaml      # INTERNAL (CF Access); host homepage.eli.kr
   - certificate.yaml       # letsencrypt-prod DNS-01
   - sealedsecret.yaml      # homepage-secrets: Proxmox API token (HOMEPAGE_VAR_PROXMOX_*)
 

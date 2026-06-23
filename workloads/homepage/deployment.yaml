@@ -35,7 +35,9 @@ spec:
                 optional: true
           volumeMounts:
             - name: config
-              mountPath: /app/config   # read-only ConfigMap; Homepage logs harmless EROFS for absent optional files
+              mountPath: /app/config           # config files from the read-only ConfigMap
+            - name: logs
+              mountPath: /app/config/logs       # writable: Homepage mkdir's this at startup (fatal if RO)
           startupProbe:
             httpGet:
               path: /
@@ -60,3 +62,5 @@ spec:
         - name: config
           configMap:
             name: homepage-config
+        - name: logs
+          emptyDir: {}

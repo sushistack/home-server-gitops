@@ -4,10 +4,10 @@ Replaced Heimdall as the homelab dashboard (2026-06-23). Stateless: all tiles/wi
 are declared in `config/*.yaml` → ConfigMap. No PVC, no backup.
 
 ## What it does
-gethomepage/homepage dashboard at `${SECRET:DOMAIN_HOMEPAGE}` (homepage.eli.kr),
-INTERNAL-only (LAN DNS → 10.0.0.101 Traefik; NO CF tunnel rule; CF Access layered on by
-operator). Tiles link to every homelab service; top bar shows system resources, clock,
-weather, and a Proxmox node/VM widget.
+gethomepage/homepage dashboard at `${SECRET:DOMAIN_HOMEPAGE}` (homepage.eli.kr), INTERNAL
+behind CF Access: external-dns publishes a public CNAME → CF tunnel so Access can gate it;
+LAN wildcard (*.eli.kr → 10.0.0.101 Traefik) resolves locally. Tiles link to every homelab
+service; top bar shows system resources, clock, weather, and a Proxmox node/VM widget.
 
 ## Health check (exact command → expected output)
 `kubectl -n homepage get deploy homepage` → `READY 1/1`
