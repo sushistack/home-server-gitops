@@ -7,14 +7,15 @@
 # Run (workstation, syntax only — apply happens via Semaphore):
 #   ansible-playbook --syntax-check ansible/media-stack/deploy.yml
 #
-# Secrets: secrets.sops.yaml is decrypted at runtime with the media-stack age key mounted in the
-# Semaphore pod at /keys/age/media.txt (NOT the cluster DR key). See runbook.md.
+# Secrets: secrets.sops.yaml is decrypted at runtime with the SINGLE cluster age identity already
+# mounted in the Semaphore pod at /keys/age/keys.txt (same recipient openwrt/oracle use — "zero new
+# keys", DECISIONS.md). See runbook.md.
 - name: Media stack — *arr + downloader on the Jellyfin host
   hosts: media
   become: true
   gather_facts: false
   environment:
-    SOPS_AGE_KEY_FILE: /keys/age/media.txt   # community.sops shells out to `sops`, which reads this
+    SOPS_AGE_KEY_FILE: /keys/age/keys.txt   # the existing single cluster age identity (semaphore-age)
   tasks:
     - name: Ensure Docker engine + compose plugin are present (idempotent)
       # docker.io + docker-compose-v2 are the Ubuntu-native packages; docker-compose-v2 provides the
@@ -74,7 +75,7 @@
         - "{{ HOST_CONFIG }}/jellyseerr"
         - "{{ HOST_CONFIG }}/maintainerr"
 
-    - name: Decrypt the gluetun VPN secrets (SOPS+age, media-stack key)
+    - name: Decrypt the gluetun VPN secrets (SOPS+age, cluster identity)
       # community.sops.load_vars loads the decrypted keys as task/play vars for the .env template
       # below. Requires the `sops` + `age` binaries on the runner (runbook §4) and SOPS_AGE_KEY_FILE
       # (set at play level). no_log so the WireGuard key never lands in Semaphore output.

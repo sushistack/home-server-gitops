@@ -1,8 +1,10 @@
 # SOPS creation rules. age recipients are PUBLIC keys (safe to commit).
 #
-# media-stack VPN secrets use a DEDICATED age key — NOT the cluster DR identity (gate0-dr).
-# Reusing the DR key here would tie a low-value media secret to the crown-jewels recovery key
-# (blast-radius coupling). Generate with `age-keygen` (runbook §2) and paste its public recipient below.
+# media-stack reuses the SINGLE cluster age identity (the same recipient openwrt/oracle/cluster
+# already use) — "zero new keys" is a recorded decision (DECISIONS.md, operational-gotchas.md).
+# Public recipient derived from the existing private identity with:
+#   age-keygen -y ~/.config/sops/age/keys.txt
+# The Semaphore pod decrypts with /keys/age/keys.txt.
 creation_rules:
   - path_regex: ansible/media-stack/secrets\.sops\.yaml$
-    age: age1REPLACE_WITH_MEDIA_STACK_RECIPIENT
+    age: age1chmmudvpz0l0vp6nnr8dpuhxeyqmsv6jhenp476hgqlz925rzgdsy9qhq4

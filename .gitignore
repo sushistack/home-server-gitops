@@ -15,3 +15,8 @@ rendered/
 # ...EXCEPT the committed placeholder example. Negation MUST come last — otherwise the
 # `*.env` rule above would re-ignore it (last matching pattern wins).
 !internal/tokens.example.env
+
+# bmad
+.claude
+.agents
+_bmad

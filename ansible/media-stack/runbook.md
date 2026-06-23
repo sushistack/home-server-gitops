@@ -4,30 +4,33 @@ Deploys `ansible/media-stack/` to the Jellyfin host via Semaphore (Ansible). Ext
 §1c/§1d pattern (the OpenWrt stack already runs this way). All steps are **operator-live** — the
 playbook itself only `--syntax-check`s in CI; nothing here is auto-applied.
 
-## 1. SSH key → `semaphore-ssh`
+## 1. SSH key → `semaphore-ssh` (reseal)
 
-Add the Jellyfin-host key as one more file in the existing secret. In
-`workloads/semaphore/seal-secrets.sh`, add to the `semaphore-ssh` seal:
-
-```sh
-  --from-file=jellyfin=<path-to-jellyfin-host-key>
-```
-
-Reseal, uncomment in `kustomization.yaml`, commit+push → it mounts at `/keys/ssh/jellyfin`.
-(`ansible_user: root` — confirm the key authorizes root on the host.)
-
-## 2. Dedicated media age key (NOT the cluster DR key)
+`seal-secrets.sh` now takes the jellyfin host key as its **4th argument** (already wired). Use whatever
+key already opens `root@<jellyfin-host>` — confirm which, then reseal:
 
 ```sh
-age-keygen -o media-stack.agekey            # prints the public recipient (age1…)
+ssh -v root@<jellyfin-host> 'echo ok' 2>&1 | grep -iE 'Server accepts|Offering'   # the accepted key file
+cd workloads/semaphore
+./seal-secrets.sh ~/.ssh/id_ed25519 ~/.ssh/oracle_proxy ~/.config/sops/age/keys.txt <jellyfin-key>
+kubectl kustomize workloads/semaphore && git add -A workloads/semaphore && git commit && git push
 ```
 
-- Put the **public** recipient into `.sops.yaml` (`age: age1REPLACE_WITH_MEDIA_STACK_RECIPIENT`).
-- Seal the **private** key into `semaphore-age` as `media.txt` (alongside the existing `keys.txt`):
-  add `--from-file=media.txt=media-stack.agekey` to that seal in `seal-secrets.sh`, reseal, push.
-  It mounts at `/keys/age/media.txt` — which `deploy.yml` points `SOPS_AGE_KEY_FILE` at.
+Mounts at `/keys/ssh/jellyfin` (`ansible_user: root`).
+> ⚠️ On reseal, reuse the existing `SEMAPHORE_ACCESS_KEY_ENCRYPTION` (don't regenerate — see script note),
+> or every stored Semaphore access key is orphaned.
 
-> 🔴 Do **not** reuse the cluster DR identity (`age1chmmudv…`). Separate key = separate blast radius.
+## 2. age key — REUSE the single cluster identity (NO new key)
+
+"Zero new keys" is a recorded decision (DECISIONS.md, operational-gotchas.md): the cluster age recipient
+already decrypts openwrt/oracle secrets in Semaphore and is mounted at `/keys/age/keys.txt`. media-stack
+uses the same — nothing to generate or seal.
+
+- Put the **full public recipient** into `.sops.yaml` (replace the placeholder):
+  ```sh
+  age-keygen -y ~/.config/sops/age/keys.txt    # prints age1chmmudv… — paste into .sops.yaml
+  ```
+- `deploy.yml` already points `SOPS_AGE_KEY_FILE` at `/keys/age/keys.txt`.
 
 ## 3. Encrypt the VPN secrets
 
