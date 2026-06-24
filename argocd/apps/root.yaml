@@ -1,0 +1,33 @@
+# App-of-apps ROOT — now self-managed (was cluster-only, baked in at bootstrap).
+#
+# Bootstrap chicken-and-egg: root must exist before it can manage anything, so it was
+# originally created by a one-shot `kubectl apply` and lived ONLY in the cluster. That made
+# changes (e.g. the home-server-gitops -> homelab-gitops repo rename) invisible to git and
+# un-revertible. Committing it here closes that gap: root now manages itself via the
+# `recurse: true` scan of argocd/, so future edits flow through git like every other app.
+#
+# Spec mirrors the live object exactly (kubectl get app root -n argocd) — do not drift.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/sushistack/homelab-gitops.git
+    targetRevision: HEAD
+    path: argocd
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
