@@ -49,6 +49,7 @@ data:
 
     import logging
     import os
+    import re
     from datetime import datetime, timedelta, timezone
     from pathlib import Path
 
@@ -309,79 +310,87 @@ data:
 
     def quarterly_archive() -> None:
         """
-        Archive the current quarter playlist:
-        - Songs within the 4-week grace period → carry over to next quarter playlist
-        - Starred songs → keep (do nothing — they stay in the archive)
-        - Remaining unstarred songs → delete track file via Lidarr + remove from playlist
+        Archive ALL past quarterly playlists (any YYYY-QN older than current quarter):
+        - Direct previous quarter: grace period applies (songs added within 28 days carry over)
+        - Older quarters (e.g. Q1 processed on Jul 1): no grace period — star status only
+        - Starred songs → kept in archive playlist
+        - Unstarred + eligible → track file deleted via Lidarr + removed from playlist
         """
         log.info("quarterly_archive: start")
-        q = _prev_quarter(current_quarter())
-        pid = get_or_create_playlist(q)
-        entries = playlist_entries(pid)
+        current_q = current_quarter()
+        prev_q = _prev_quarter(current_q)
+
+        data = subsonic_get("getPlaylists")
+        all_pls = data.get("playlists", {}).get("playlist", [])
+        if isinstance(all_pls, dict):
+            all_pls = [all_pls]
+
+        # Find all playlists matching YYYY-QN that are older than current quarter
+        past_q_pls = [
+            p for p in all_pls
+            if re.match(r"^\d{4}-Q[1-4]$", p["name"]) and p["name"] < current_q
+        ]
+
+        if not past_q_pls:
+            log.info("quarterly_archive: no past quarterly playlists found")
+            return
+
         stars = starred_ids()
+        grace_days = int(os.getenv("GRACE_PERIOD_DAYS", "28"))
+        grace_cutoff = datetime.now(timezone.utc) - timedelta(days=grace_days)
+        # Songs carried over always go to the new current quarter
+        carry_next_pid: str | None = None
 
-        grace_cutoff = datetime.now(timezone.utc) - timedelta(
-            days=int(os.getenv("GRACE_PERIOD_DAYS", "28"))
-        )
+        for pl in sorted(past_q_pls, key=lambda p: p["name"]):
+            q = pl["name"]
+            pid = pl["id"]
+            # Only the direct previous quarter gets grace period; older ones do not
+            apply_grace = (q == prev_q)
+            entries = playlist_entries(pid)
+            log.info("quarterly_archive: processing %s (%d songs, grace=%s)", q, len(entries), apply_grace)
 
-        carry_over: list[str] = []
-        to_remove_indices: list[int] = []
+            carry_over: list[str] = []
+            to_remove_indices: list[int] = []
 
-        for idx, entry in enumerate(entries):
-            # Parse Subsonic ISO created timestamp (e.g. "2026-06-01T12:00:00.000Z")
-            created_str = entry.get("created", "")
-            try:
-                created_dt = datetime.fromisoformat(
-                    created_str.replace("Z", "+00:00")
-                )
-            except (ValueError, AttributeError):
-                log.warning(
-                    "quarterly_archive: cannot parse created=%r for song %s; treating as old",
-                    created_str,
-                    entry.get("id"),
-                )
-                created_dt = datetime.min.replace(tzinfo=timezone.utc)
+            for idx, entry in enumerate(entries):
+                created_str = entry.get("created", "")
+                try:
+                    created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+                except (ValueError, AttributeError):
+                    log.warning("quarterly_archive: cannot parse created=%r for %s; treating as old", created_str, entry.get("id"))
+                    created_dt = datetime.min.replace(tzinfo=timezone.utc)
 
-            if created_dt > grace_cutoff:
-                # Within grace period — carry over regardless of star status
-                carry_over.append(entry["id"])
-                continue
+                if apply_grace and created_dt > grace_cutoff:
+                    carry_over.append(entry["id"])
+                    continue
 
-            if entry["id"] in stars:
-                # Starred — keep in current archive (do nothing)
-                continue
+                if entry["id"] in stars:
+                    continue  # starred — keep in archive
 
-            # Unstarred + past grace period — delete file and remove from playlist
-            _delete_track_file(entry)
-            to_remove_indices.append(idx)
+                # Unstarred + eligible → delete file + remove from playlist
+                _delete_track_file(entry)
+                to_remove_indices.append(idx)
 
-        # Remove unstarred songs from the current playlist (indices sorted descending)
-        if to_remove_indices:
-            to_remove_indices.sort(reverse=True)
-            auth = [("u", ND_USER), ("p", ND_PASSWORD), ("v", "1.16.1"), ("c", "curator"), ("f", "json")]
-            params = auth + [("playlistId", pid)] + [("songIndexToRemove", idx) for idx in to_remove_indices]
-            resp = requests.get(f"{ND_URL}/rest/updatePlaylist", params=params, timeout=30)
-            resp.raise_for_status()
-            log.info("quarterly_archive: removed %d songs from %s", len(to_remove_indices), q)
+            if to_remove_indices:
+                to_remove_indices.sort(reverse=True)
+                auth = [("u", ND_USER), ("p", ND_PASSWORD), ("v", "1.16.1"), ("c", "curator"), ("f", "json")]
+                params = auth + [("playlistId", pid)] + [("songIndexToRemove", i) for i in to_remove_indices]
+                resp = requests.get(f"{ND_URL}/rest/updatePlaylist", params=params, timeout=30)
+                resp.raise_for_status()
+                log.info("quarterly_archive: removed %d songs from %s", len(to_remove_indices), q)
 
-        starred_count = sum(
-            1 for e in entries
-            if e["id"] in stars and e["id"] not in [entries[i]["id"] for i in to_remove_indices]
-        )
-        if starred_count == 0:
-            log.warning("quarterly_archive: 0 starred songs archived for %s", q)
+            starred_kept = len(entries) - len(to_remove_indices) - len(carry_over)
+            if starred_kept == 0:
+                log.warning("quarterly_archive: 0 starred songs kept in %s", q)
 
-        # Carry-over songs → next quarter playlist
-        if carry_over:
-            next_q = _next_quarter(q)
-            next_pid = get_or_create_playlist(next_q)
-            existing_next = {e["id"] for e in playlist_entries(next_pid)}
-            new_carry = [sid for sid in carry_over if sid not in existing_next]
-            if new_carry:
-                _playlist_add(next_pid, new_carry)
-                log.info(
-                    "quarterly_archive: carried %d songs to %s", len(new_carry), next_q
-                )
+            if carry_over:
+                if carry_next_pid is None:
+                    carry_next_pid = get_or_create_playlist(current_q)
+                existing_next = {e["id"] for e in playlist_entries(carry_next_pid)}
+                new_carry = [sid for sid in carry_over if sid not in existing_next]
+                if new_carry:
+                    _playlist_add(carry_next_pid, new_carry)
+                    log.info("quarterly_archive: carried %d songs from %s to %s", len(new_carry), q, current_q)
 
         log.info("quarterly_archive: done")
 
