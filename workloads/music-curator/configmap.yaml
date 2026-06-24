@@ -11,7 +11,7 @@ data:
   # Lidarr ClusterIP FQDN (port 8686 from lidarr/deployment-lidarr.yaml)
   LIDARR_URL: http://lidarr.lidarr.svc.cluster.local:8686
   # Last.fm scrobbling account username — operator fills real value
-  LASTFM_USER: changeme
+  LASTFM_USER: JongminGim
   TZ: Asia/Seoul
   GRACE_PERIOD_DAYS: "28"
   # Lidarr quality profile id — "1" is the default "Any" profile; override if custom profile exists
