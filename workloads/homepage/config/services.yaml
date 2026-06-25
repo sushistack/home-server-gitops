@@ -76,10 +76,6 @@
         href: https://${SECRET:DOMAIN_IMMICH}
         icon: immich.png
         description: Photos
-        widget:
-          type: immich
-          url: https://${SECRET:DOMAIN_IMMICH}
-          key: "{{HOMEPAGE_VAR_IMMICH_API_KEY}}"
     - music:
         href: https://${SECRET:DOMAIN_NAVIDROME}
         icon: navidrome.png
