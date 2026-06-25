@@ -31,7 +31,8 @@ for var in \
   HOMEPAGE_VAR_CALIBRE_PASSWORD \
   HOMEPAGE_VAR_ARGOCD_API_KEY \
   HOMEPAGE_VAR_OPENWRT_USER \
-  HOMEPAGE_VAR_OPENWRT_PASSWORD; do
+  HOMEPAGE_VAR_OPENWRT_PASSWORD \
+  HOMEPAGE_VAR_NTFY_API_KEY; do
   if [[ -z "${!var:-}" ]]; then
     echo "ERROR: $var is empty in secrets.env" >&2
     exit 1
@@ -55,6 +56,7 @@ kubectl create secret generic homepage-secrets -n homepage \
   --from-literal=HOMEPAGE_VAR_ARGOCD_API_KEY="$HOMEPAGE_VAR_ARGOCD_API_KEY" \
   --from-literal=HOMEPAGE_VAR_OPENWRT_USER="$HOMEPAGE_VAR_OPENWRT_USER" \
   --from-literal=HOMEPAGE_VAR_OPENWRT_PASSWORD="$HOMEPAGE_VAR_OPENWRT_PASSWORD" \
+  --from-literal=HOMEPAGE_VAR_NTFY_API_KEY="$HOMEPAGE_VAR_NTFY_API_KEY" \
   --dry-run=client -o yaml | \
   kubeseal \
     --controller-name sealed-secrets \

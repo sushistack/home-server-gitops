@@ -25,12 +25,15 @@
           - type: ntfy
             url: https://${SECRET:DOMAIN_NTFY}
             topic: homelab-critical
+            key: "{{HOMEPAGE_VAR_NTFY_API_KEY}}"
           - type: ntfy
             url: https://${SECRET:DOMAIN_NTFY}
             topic: homelab-monitor
+            key: "{{HOMEPAGE_VAR_NTFY_API_KEY}}"
           - type: ntfy
             url: https://${SECRET:DOMAIN_NTFY}
             topic: homelab-ops
+            key: "{{HOMEPAGE_VAR_NTFY_API_KEY}}"
 
 - Reads:
     - keep:
