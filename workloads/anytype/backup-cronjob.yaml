@@ -84,7 +84,7 @@ spec:
                   fi
                   tar -C /data -czf "/scratch/anytype-${ts}.tar.gz" .
                   rclone copy "/scratch/anytype-${ts}.tar.gz" "r2:homelab-k3s-services-backup/anytype/"
-                  rclone delete --min-age 168h "r2:homelab-k3s-services-backup/anytype/" || true   # 7d (daily cadence → ~7 copies); was 720h, see schedule note
+                  rclone delete --min-age 72h "r2:homelab-k3s-services-backup/anytype/" || true   # 3d (daily cadence → ~3 copies); was 168h — data grew 305→550 MiB, 7 copies ≈ 4 GiB alone
               env:
                 - name: RCLONE_CONFIG_R2_NO_CHECK_BUCKET   # bucket-scoped token can't probe/create the bucket → 403
                   value: "true"
@@ -158,7 +158,7 @@ spec:
                   fi
                   tar -C /data -czf "/scratch/anytype-heart-${ts}.tar.gz" .
                   rclone copy "/scratch/anytype-heart-${ts}.tar.gz" "r2:homelab-k3s-services-backup/anytype-heart/"
-                  rclone delete --min-age 168h "r2:homelab-k3s-services-backup/anytype-heart/" || true   # 7d (daily cadence), was 720h
+                  rclone delete --min-age 72h "r2:homelab-k3s-services-backup/anytype-heart/" || true   # 3d (daily cadence → ~3 copies), was 168h
               env:
                 - name: RCLONE_CONFIG_R2_NO_CHECK_BUCKET
                   value: "true"
