@@ -6,6 +6,8 @@
 #   look there). cgroup v2 metrics come through /host/sys — NO separate /sys/fs/cgroup mount, and NO
 #   docker/containerd socket (containerd cluster — pod-name resolution is via the kubelet, see below).
 #   hostPID: gives apps.plugin the real host process table.
+#   /mnt (RO) — disk_space plugin reads /proc/mounts then calls statfs() on each path from *inside* the
+#   container; without this mount the plugin can't reach /mnt/manga or /mnt/music and silently skips them.
 #
 # Per-pod NAMES (not cgroup hashes): cgroups.plugin's cgroup-name.sh queries the node's own kubelet at
 #   KUBELET_URL=https://localhost:10250/pods  (USE_KUBELET_FOR_PODS_METADATA=1) — which is why the pod
@@ -87,6 +89,9 @@ spec:
               subPath: stream-child.conf
             - name: lib                 # node-local MACHINE_GUID — stable across pod restarts so a
               mountPath: /var/lib/netdata   # restarted child re-uses its identity (no ghost k3s-cp-* node)
+            - name: mnt
+              mountPath: /mnt
+              readOnly: true
       volumes:
         - name: proc
           hostPath:
@@ -107,4 +112,8 @@ spec:
         - name: lib                 # node-local dir (DaemonSet is node-pinned) — persists this node's
           hostPath:                 # netdata identity. netdata's entrypoint (runs as root) fixes ownership.
             path: /var/lib/netdata-children
+            type: DirectoryOrCreate
+        - name: mnt
+          hostPath:
+            path: /mnt
             type: DirectoryOrCreate
