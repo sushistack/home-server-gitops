@@ -14,7 +14,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: longhorn
+  storageClassName: local-path-retain
   resources:
     requests:
       storage: 2Gi   # database.sqlite + tasks.sqlite + komga thumbnail cache; grow via PR
@@ -28,7 +28,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: longhorn
+  storageClassName: local-path-retain
   resources:
     requests:
       storage: 2Gi   # Tachidesk data dir (DB + sources/extensions + settings); downloads live on NFS, not here

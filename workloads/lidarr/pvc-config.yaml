@@ -12,7 +12,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: longhorn
+  storageClassName: local-path-retain
   resources:
     requests:
       storage: 2Gi   # lidarr.db + logs.db + metadata cache; grow via PR
@@ -26,7 +26,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: longhorn
+  storageClassName: local-path-retain
   resources:
     requests:
       storage: 2Gi   # slskd.db (peer/search/transfer state) + incomplete downloads; grow via PR
@@ -40,7 +40,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: longhorn
+  storageClassName: local-path-retain
   resources:
     requests:
       storage: 1Gi   # soularr working dir: run state + logs (config.ini overlaid from the SealedSecret)

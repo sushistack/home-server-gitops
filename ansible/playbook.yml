@@ -10,64 +10,27 @@
 #   Play 2  nodes2/3 — join as `server` (NOT agent) so all three are control-plane + worker
 #                      and etcd reaches quorum=3 (never settle at 2).
 #   Play 3  node 1   — Helm + ArgoCD (installed ONCE) + repo Secret + Cloudflare DNS-01 token.
-#                      + Story 2.2: un-default the bundled local-path StorageClass.
-#   Play 0  all      — Story 2.2: Longhorn host prerequisites (runs first; see below).
+#                      + storage: local-path is the SOLE default StorageClass.
 #
 # Token-free by design: real IPs come from rendered/ansible/inventory.yml; the repo credential
 # ($ARGOCD_REPO_TOKEN, only for a private repo) and the Cloudflare DNS-01 token
 # ($CLOUDFLARE_DNS01_TOKEN) come from the operator's environment — never tracked.
 
-# ── Story 2.2 ───────────────────────────────────────────────────────────────
-# Longhorn host prerequisites on EVERY node. Runs first because they are plain host
-# packages, independent of k3s, and must exist before the Longhorn Application (wave 0)
-# attaches any volume. The two disaster traps Longhorn-on-bare-metal hits:
-#   1. open-iscsi installed ≠ working — `iscsid` must be ENABLED + ACTIVE or attach fails.
-#   2. multipathd steals the Longhorn block device ("device or resource busy") — disable AND
-#      mask the service (survives reboot/reinstall) AND blacklist the devices in multipath.conf.
-- name: Play 0 — Longhorn node prerequisites (ALL nodes, Story 2.2)
+# ── Storage prerequisites ────────────────────────────────────────────────────
+# nfs-common is required on every node: local PVs in lidarr/navidrome/komga bind host-path
+# directories that come from an NFS mount (/mnt/music, /mnt/manga). Without nfs-common those
+# mounts silently fail on a fresh k3s install. open-iscsi/iscsid removed (Longhorn gone).
+- name: Play 0 — node storage prerequisites
   hosts: all
   become: true
   gather_facts: false
   tasks:
-    - name: Install Longhorn prerequisite packages (open-iscsi for V1 iSCSI attach, nfs-common for RWX)
+    - name: Install nfs-common (required for NFS host-path mounts used by local PVs)
       ansible.builtin.apt:
-        name:
-          - open-iscsi
-          - nfs-common
+        name: nfs-common
         state: present
         update_cache: true
         cache_valid_time: 3600
-
-    - name: Enable + start iscsid (the package being present is NOT enough — Longhorn V1 needs it running)
-      ansible.builtin.systemd_service:
-        name: iscsid
-        enabled: true
-        state: started
-
-    - name: Disable + mask multipathd so it never claims Longhorn devices (masking survives reinstall/reboot)
-      # `state: stopped` + `masked: true` is stronger than disable alone: a mask points the unit at
-      # /dev/null so even a package reinstall or a dependency pulling multipath-tools back in cannot
-      # start it. Idempotent and harmless if multipath-tools is not installed at all.
-      ansible.builtin.systemd_service:
-        name: multipathd
-        state: stopped
-        enabled: false
-        masked: true
-      # If multipath-tools is genuinely absent the unit may not exist; that is already the desired state.
-      failed_when: false
-
-    - name: Belt-and-suspenders — blacklist ALL block devices in /etc/multipath.conf
-      # In case multipath-tools is ever reinstalled and unmasked, this stops it grabbing ANY device.
-      ansible.builtin.copy:
-        dest: /etc/multipath.conf
-        mode: '0644'
-        content: |
-          # Managed by Ansible (Story 2.2). This node never uses multipathd, so blacklist EVERY
-          # device — a narrow `^sd…` regex misses the Proxmox virtio disk names (`vd*`) and NVMe
-          # (`nvme*`) the Longhorn data device may actually use, leaving it unprotected.
-          blacklist {
-              devnode "^.*"
-          }
 
 - name: Play 1 — initialize etcd on node 1 (--cluster-init)
   hosts: k3s_init
@@ -216,21 +179,18 @@
       delay: 10
       until: cluster_quorum.rc == 0
 
-    - name: Un-default the bundled local-path StorageClass (Story 2.2 — so `longhorn` becomes the SOLE default)
-      # k3s ships local-path as the default StorageClass. The Longhorn Helm app sets `longhorn`
-      # default too; TWO defaults make Kubernetes reject class-less PVCs. Patch local-path to
-      # non-default here at bootstrap (durable through a clean rebuild — local-path returns as
-      # default on every fresh k3s install, so this MUST live in the bootstrap layer, not as a
-      # one-off kubectl). local-path was the Phase-1-only throwaway provisioner; Longhorn is the
-      # Phase-2a default. The SC exists shortly after k3s starts — wait for it, then patch idempotently.
-      # CAVEAT: an in-place k3s UPGRADE re-applies the bundled local-storage manifest and can re-stamp
-      # local-path as default again — re-run this playbook after a k3s version bump to re-assert.
+    - name: Assert local-path StorageClass is the sole default (k3s built-in, zero overhead)
+      # k3s ships local-path as the default StorageClass. This cluster uses local-path directly
+      # (no Longhorn), so we ensure it stays marked default after every k3s install/upgrade —
+      # a k3s UPGRADE re-applies the bundled local-storage manifest and keeps the annotation, but
+      # re-running this task is idempotent (no-op if already true). The SC exists shortly after
+      # k3s starts — wait for it, then patch idempotently.
       ansible.builtin.shell: |
         set -o pipefail   # NOT -e: a transient patch failure must retry the loop, not abort the task
         for _ in $(seq 1 18); do
           if k3s kubectl get storageclass local-path >/dev/null 2>&1; then
             if k3s kubectl patch storageclass local-path \
-                 -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'; then
+                 -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'; then
               exit 0
             fi
           fi
@@ -240,8 +200,6 @@
       args:
         executable: /bin/bash
       register: localpath_patch
-      # kubectl prints "… patched (no change)" when the annotation is already set — honour the
-      # playbook's "re-running converges" contract instead of always reporting CHANGED.
       changed_when: "'(no change)' not in localpath_patch.stdout"
 
     - name: Install Helm (installer pinned to a tag, not main — reproducible)

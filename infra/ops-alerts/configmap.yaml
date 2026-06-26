@@ -91,21 +91,19 @@ data:
         notify "$NTFY_TOPIC_CRITICAL" "🔐 Certificate expiring: $cert" "$rows"
       done
 
-    # (b) Longhorn node disk >= 80%  (usage = 1 - storageAvailable/storageMaximum)
-    kubectl get nodes.longhorn.io -A -o json | jq -r --argjson pct "$DISK_PCT" '
+    # (b) Node disk pressure (k8s DiskPressure condition — replaces Longhorn disk check post-migration)
+    # local-path stores data under /var/lib/rancher/k3s/storage on k3s-cp-1; kubelet's eviction
+    # manager monitors the underlying filesystem and sets DiskPressure=True when space is low.
+    kubectl get nodes -o json | jq -r '
       .items[] | .metadata.name as $node
-      | (.status.diskStatus // {}) | to_entries[]
-      | select((.value.storageMaximum // 0) > 0 and .value.storageAvailable != null)
-      | ((1 - (.value.storageAvailable / .value.storageMaximum)) * 100) as $used
-      | select($used >= $pct)
-      | "\($node)\t\(.key)\t\($used | floor)"' \
-    | while IFS="$(printf '\t')" read -r node disk used; do
-        rows=$(jq -nc --arg node "$node" --arg disk "$disk" --argjson used "$used" --arg thr "$DISK_PCT" '[
+      | (.status.conditions[] | select(.type == "DiskPressure") | .status) as $dp
+      | select($dp == "True")
+      | $node' \
+    | while read -r node; do
+        rows=$(jq -nc --arg node "$node" '[
           {key:"Node", value:$node, icon:"host"},
-          {key:"Disk", value:$disk, icon:"disk"},
-          {key:"Usage", value:"\($used)%", meter:$used},
-          {key:"Threshold", value:"\($thr)%"},
-          {key:"Fix", value:"Free space or expand the disk in the Longhorn UI", icon:"exit"}]') || rows='[]'
+          {key:"Condition", value:"DiskPressure=True", icon:"disk"},
+          {key:"Fix", value:"Free space on local-path storage dir: /var/lib/rancher/k3s/storage", icon:"exit"}]') || rows='[]'
         notify "$NTFY_TOPIC_CRITICAL" "💾 Storage low: $node" "$rows"
       done
 

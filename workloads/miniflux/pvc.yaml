@@ -14,7 +14,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: longhorn
+  storageClassName: local-path-retain
   resources:
     requests:
       storage: 2Gi   # feeds/entries DB is small; grow via PR if entry retention rises

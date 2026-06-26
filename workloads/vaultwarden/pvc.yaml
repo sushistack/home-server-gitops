@@ -16,7 +16,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: longhorn
+  storageClassName: local-path-retain
   resources:
     requests:
       storage: 2Gi   # db.sqlite3 is tiny (~MBs); headroom for attachments/sends. Grow via PR if it climbs.

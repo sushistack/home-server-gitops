@@ -20,7 +20,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: longhorn
+  storageClassName: local-path-retain
   resources:
     requests:
       storage: 5Gi   # db.db ~0.6 MB today + crawled assets; grow via PR if assets climb
@@ -34,7 +34,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: longhorn
+  storageClassName: local-path-retain
   resources:
     requests:
       storage: 1Gi   # bridge.sqlite dedup map (~12 KB today); grow via PR
@@ -48,7 +48,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: longhorn
+  storageClassName: local-path-retain
   resources:
     requests:
       storage: 2Gi   # rebuilt index; grow via PR

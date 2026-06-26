@@ -1,0 +1,26 @@
+# local-path-retain StorageClass — GitOps-managed so reclaimPolicy: Retain is enforced on
+# every cluster build/rebuild without operator kubectl patches. Wave 0: must exist before ANY
+# workload PVC binds (same wave as sealed-secrets). The bundled k3s `local-path` SC stays
+# as the cluster default for disposable/ephemeral workloads; stateful workloads use this class.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: local-path
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: homelab
+  source:
+    repoURL: https://github.com/sushistack/homelab-gitops.git
+    targetRevision: HEAD
+    path: infra/local-path
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

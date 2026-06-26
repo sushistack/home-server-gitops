@@ -28,6 +28,14 @@ Active work this session: **Stage 1 — external-dns (Cloudflare)**. Below are t
 
 - **Navidrome widget credentials scope:** Navidrome has no read-only role or scoped API token — `HOMEPAGE_VAR_NAVIDROME_USER/PASSWORD` exposes a reusable account password. Mitigation options: dedicated low-privilege account with a long random password, or wait for Navidrome to add API key support. `music.eli.kr` is publicly accessible (CF tunnel, no CF Access) so this is a real exposure.
 
+## Deferred from: Longhorn → local-path migration (2026-06-26)
+
+- **Offsite backup replacement.** Longhorn R2 RecurringJob removed. Services with app-level DB dumps (vaultwarden, ntfy, miniflux) are covered. Services WITHOUT offsite backup: semaphore, komga, suwayomi, anytype, karakeep. Implement a rclone CronJob that syncs `/var/lib/rancher/k3s/storage/` to R2 on k3s-cp-1.
+- **longhorn-system namespace cleanup.** Post-merge, operator must manually delete the namespace and CRDs (see `infra/longhorn/README.md`). ArgoCD does NOT cascade-delete resources when the Application is removed.
+- **ArgoCD PVC sequencing.** Merging this branch before all PVC migrations complete will cause ArgoCD OutOfSync on workload apps (immutable `storageClassName` field). Operator must complete all 20 PVC migrations BEFORE merging this PR, or temporarily disable ArgoCD auto-sync on affected apps during the migration window.
+- **DiskPressure alerting regression.** Old check fired at 80% disk usage; new check (k8s DiskPressure condition) fires at ~10–15% free space remaining. Acceptable for a homelab; revisit with node-exporter if proactive alerting matters.
+- **local-path PVC re-creation risk.** If a `local-path-retain` PVC is ever deleted and re-created, the new PV will provision on whichever node the first pod schedules on (no static node constraint). `WaitForFirstConsumer` on the StorageClass helps but does not guarantee k3s-cp-1 without a nodeSelector on the deployment. Add nodeSelector to high-stakes workloads (vaultwarden, ntfy) if needed.
+
 ## Deferred from: code review of spec-music-lidarr (2026-06-23)
 
 - All media stacks (komga/suwayomi/lidarr/slskd/soularr/navidrome) are pinned to k3s-cp-1 via node-local PVs → single-node SPOF + resource contention. Track in capacity monitoring (netdata/ops-alerts); revisit if the node gets tight or HA becomes a requirement.

@@ -1,0 +1,15 @@
+# local-path-retain: k3s built-in local-path provisioner with reclaimPolicy: Retain.
+# Using a named class (not patching the bundled `local-path` SC) so this survives k3s upgrades
+# without re-patching. All stateful workload PVCs reference this class explicitly (AR15).
+# WaitForFirstConsumer: the PV is provisioned on the node where the claiming pod first schedules,
+# then that node's nodeAffinity pins all future pods to the same node — no extra nodeSelector needed.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-retain
+  annotations:
+    # NOT the default class — workload PVCs must name it explicitly per AR15.
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: rancher.io/local-path
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer

@@ -35,19 +35,6 @@ cert-manager:
   chartVersion: v1.19.5
   appVersion: v1.19.5
 
-longhorn:
-  # Story 2.2: persistent storage, wave 0 (must exist before any workload PVC). Vendor Helm
-  # chart referenced as an ArgoCD `source` (argocd/apps/longhorn.yaml) — NOT mirrored.
-  # Chart version == release version WITHOUT the leading `v`; appVersion carries the `v`.
-  # PIN THE V1 DATA ENGINE EXPLICITLY: V2 went *GA* in v1.12.0 (not just tech-preview anymore),
-  # so an unset defaultDataEngine is a real risk of landing on V2 — see the app values (AR6).
-  # ServerSideApply required (Longhorn CRD annotations exceed client-side apply — AR7).
-  repo: https://charts.longhorn.io
-  chart: longhorn
-  # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
-  chartVersion: 1.12.0     # -> appVersion v1.12.0 (released 2026-06-02)
-  appVersion: v1.12.0
-
 sealed-secrets:
   # Story 2.3: workload-secret encryption, wave 0 (controller + CRD must exist before any
   # later-wave workload references a materialized Secret). Vendor Bitnami Helm chart referenced

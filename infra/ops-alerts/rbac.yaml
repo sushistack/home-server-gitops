@@ -1,13 +1,13 @@
 # Least-privilege, read-only, cross-namespace (ClusterRole) — exactly the resource kinds the four
 # checks inspect, get+list ONLY. No write verbs, NO secret reads. (AR27; architecture #RBAC line ~651)
 #   certificates.cert-manager.io  -> (a) cert expiry backstop
-#   nodes.longhorn.io             -> (b) disk >= 80%
+#   nodes (core)                  -> (b) DiskPressure condition (local-path storage, post-Longhorn)
+#                                    (f) k3s version drift + (g) node NotReady — NFR15b, Story 5.1
 #   deployments/statefulsets.apps -> (c) stateful workload readyReplicas < desired
 #   jobs.batch                    -> (d) backup/restore Job failure
 #   cronjobs.batch                -> derive the "stateful namespaces" set for (c) from the
 #                                    <service>-backup convention (Story 4.1 backup actor)
 #   applications.argoproj.io      -> (e) ArgoCD drift (OutOfSync/Degraded) — NFR15b, Story 5.1
-#   nodes (core)                  -> (f) k3s version drift + (g) node NotReady — NFR15b, Story 5.1
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -15,9 +15,6 @@ metadata:
 rules:
   - apiGroups: ["cert-manager.io"]
     resources: ["certificates"]
-    verbs: ["get", "list"]
-  - apiGroups: ["longhorn.io"]
-    resources: ["nodes"]
     verbs: ["get", "list"]
   - apiGroups: ["apps"]
     resources: ["deployments", "statefulsets"]

@@ -14,7 +14,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: longhorn
+  storageClassName: local-path-retain
   resources:
     requests:
       storage: 1Gi   # database.sqlite ~745 KB today + nodes/binaryData headroom; grow via PR if it climbs
