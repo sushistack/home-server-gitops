@@ -13,7 +13,6 @@ data:
   # Last.fm scrobbling account username — operator fills real value
   LASTFM_USER: JongminGim
   TZ: Asia/Seoul
-  GRACE_PERIOD_DAYS: "28"
   # Comma-separated Last.fm tag whitelist — similar artists without any of these tags
   # are skipped during discovery. Empty string = allow all.
   DISCOVERY_ALLOWED_TAGS: >-
@@ -465,23 +464,15 @@ data:
     # ---------------------------------------------------------------------------
 
     def quarterly_archive() -> None:
-        """
-        Archive ALL past quarterly playlists (any YYYY-QN older than current quarter):
-        - Direct previous quarter: grace period applies (songs added within 28 days carry over)
-        - Older quarters (e.g. Q1 processed on Jul 1): no grace period — star status only
-        - Starred songs → kept in archive playlist
-        - Unstarred + eligible → track file deleted via Lidarr + removed from playlist
-        """
+        """Archive past YYYY-QN playlists: starred songs kept, unstarred already deleted by daily_prune."""
         log.info("quarterly_archive: start")
         current_q = current_quarter()
-        prev_q = _prev_quarter(current_q)
 
         data = subsonic_get("getPlaylists")
         all_pls = data.get("playlists", {}).get("playlist", [])
         if isinstance(all_pls, dict):
             all_pls = [all_pls]
 
-        # Find all playlists matching YYYY-QN that are older than current quarter
         past_q_pls = [
             p for p in all_pls
             if re.match(r"^\d{4}-Q[1-4]$", p["name"]) and p["name"] < current_q
@@ -492,83 +483,19 @@ data:
             return
 
         stars = starred_ids()
-        grace_days = int(os.getenv("GRACE_PERIOD_DAYS", "28"))
-        grace_cutoff = datetime.now(timezone.utc) - timedelta(days=grace_days)
-        # Songs carried over always go to the new current quarter
-        carry_next_pid: str | None = None
-
         for pl in sorted(past_q_pls, key=lambda p: p["name"]):
             q = pl["name"]
-            pid = pl["id"]
-            # Only the direct previous quarter gets grace period; older ones do not
-            apply_grace = (q == prev_q)
-            entries = playlist_entries(pid)
-            log.info("quarterly_archive: processing %s (%d songs, grace=%s)", q, len(entries), apply_grace)
-
-            carry_over: list[str] = []
-            to_remove_indices: list[int] = []
-
-            for idx, entry in enumerate(entries):
-                created_str = entry.get("created", "")
-                try:
-                    created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
-                except (ValueError, AttributeError):
-                    log.warning("quarterly_archive: cannot parse created=%r for %s; treating as old", created_str, entry.get("id"))
-                    created_dt = datetime.min.replace(tzinfo=timezone.utc)
-
-                if apply_grace and created_dt > grace_cutoff:
-                    carry_over.append(entry["id"])
-                    continue
-
-                if entry["id"] in stars:
-                    continue  # starred — keep in archive
-
-                # Unstarred + eligible → delete file + remove from playlist
-                _delete_track_file(entry)
-                to_remove_indices.append(idx)
-
+            entries = playlist_entries(pl["id"])
+            log.info("quarterly_archive: processing %s (%d songs)", q, len(entries))
+            to_remove_indices = [idx for idx, e in enumerate(entries) if e["id"] not in stars]
             if to_remove_indices:
                 to_remove_indices.sort(reverse=True)
                 auth = [("u", ND_USER), ("p", ND_PASSWORD), ("v", "1.16.1"), ("c", "curator"), ("f", "json")]
-                params = auth + [("playlistId", pid)] + [("songIndexToRemove", i) for i in to_remove_indices]
-                resp = requests.get(f"{ND_URL}/rest/updatePlaylist", params=params, timeout=30)
-                resp.raise_for_status()
-                log.info("quarterly_archive: removed %d songs from %s", len(to_remove_indices), q)
-
-            starred_kept = len(entries) - len(to_remove_indices) - len(carry_over)
-            if starred_kept == 0:
-                log.warning("quarterly_archive: 0 starred songs kept in %s", q)
-
-            if carry_over:
-                if carry_next_pid is None:
-                    carry_next_pid = get_or_create_playlist(current_q)
-                existing_next = {e["id"] for e in playlist_entries(carry_next_pid)}
-                new_carry = [sid for sid in carry_over if sid not in existing_next]
-                if new_carry:
-                    _playlist_add(carry_next_pid, new_carry)
-                    log.info("quarterly_archive: carried %d songs from %s to %s", len(new_carry), q, current_q)
+                params = auth + [("playlistId", pl["id"])] + [("songIndexToRemove", i) for i in to_remove_indices]
+                requests.get(f"{ND_URL}/rest/updatePlaylist", params=params, timeout=30).raise_for_status()
+                log.info("quarterly_archive: removed %d unstarred songs from %s", len(to_remove_indices), q)
 
         log.info("quarterly_archive: done")
-
-
-    def _next_quarter(q: str) -> str:
-        """Return the next quarter string given 'YYYY-QN'."""
-        year, qn = q.split("-Q")
-        year = int(year)
-        qn = int(qn)
-        if qn == 4:
-            return f"{year + 1}-Q1"
-        return f"{year}-Q{qn + 1}"
-
-
-    def _prev_quarter(q: str) -> str:
-        """Return the previous quarter string given 'YYYY-QN'."""
-        year, qn = q.split("-Q")
-        year = int(year)
-        qn = int(qn)
-        if qn == 1:
-            return f"{year - 1}-Q4"
-        return f"{year}-Q{qn - 1}"
 
 
     def _delete_track_file(entry: dict) -> None:
