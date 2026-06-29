@@ -6,7 +6,10 @@
       "name": "Schedule Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [260, 300],
+      "position": [
+        260,
+        300
+      ],
       "parameters": {
         "rule": {
           "interval": [
@@ -24,22 +27,81 @@
       "name": "Set Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [460, 300],
+      "position": [
+        460,
+        300
+      ],
       "parameters": {
         "mode": "manual",
         "duplicateItem": false,
         "assignments": {
           "assignments": [
-            {"id": "a1", "name": "SCHEDULE_HOUR",          "value": "6",                                                    "type": "string"},
-            {"id": "a2", "name": "MIN_SCORE",               "value": "80",                                                   "type": "string"},
-            {"id": "a3", "name": "MAX_DAILY_CANDIDATES",    "value": "1",                                                    "type": "string"},
-            {"id": "a4", "name": "TARGET_DECK",             "value": "English",                                              "type": "string"},
-            {"id": "a5", "name": "MODEL_NAME",              "value": "EnglishQuest",                                         "type": "string"},
-            {"id": "a6", "name": "MINIFLUX_FETCH_LIMIT",    "value": "30",                                                   "type": "string"},
-            {"id": "a7", "name": "MINIFLUX_API_URL",        "value": "http://miniflux.miniflux.svc.cluster.local:8080",      "type": "string"},
-            {"id": "a8", "name": "ANKI_CONNECT_URL",        "value": "http://10.0.0.12:8765",                                "type": "string"},
-            {"id": "a9", "name": "LLM_API_URL",             "value": "https://api.deepseek.com/chat/completions",            "type": "string"},
-            {"id": "a10","name": "LLM_MODEL",               "value": "deepseek-chat",                                        "type": "string"}
+            {
+              "id": "a1",
+              "name": "SCHEDULE_HOUR",
+              "value": "6",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "MIN_SCORE",
+              "value": "80",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "MAX_DAILY_CANDIDATES",
+              "value": "1",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "TARGET_DECK",
+              "value": "English",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "MODEL_NAME",
+              "value": "EnglishQuest",
+              "type": "string"
+            },
+            {
+              "id": "a6",
+              "name": "MINIFLUX_FETCH_LIMIT",
+              "value": "30",
+              "type": "string"
+            },
+            {
+              "id": "a7",
+              "name": "MINIFLUX_API_URL",
+              "value": "http://miniflux.miniflux.svc.cluster.local:8080",
+              "type": "string"
+            },
+            {
+              "id": "a8",
+              "name": "ANKI_CONNECT_URL",
+              "value": "http://10.0.0.12:8765",
+              "type": "string"
+            },
+            {
+              "id": "a9",
+              "name": "LLM_API_URL",
+              "value": "https://api.deepseek.com/chat/completions",
+              "type": "string"
+            },
+            {
+              "id": "a10",
+              "name": "LLM_MODEL",
+              "value": "deepseek-chat",
+              "type": "string"
+            },
+            {
+              "id": "a11",
+              "name": "ANKI_CONNECT_KEY",
+              "value": "faaeb655d017e947d69a2bed551bb93c90678bcd",
+              "type": "string"
+            }
           ]
         },
         "options": {}
@@ -50,22 +112,19 @@
       "name": "Anki Ping",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [660, 300],
+      "position": [
+        660,
+        300
+      ],
       "continueOnFail": true,
       "parameters": {
         "method": "POST",
         "url": "={{ $('Set Config').first().json.ANKI_CONNECT_URL }}",
         "authentication": "genericCredentialType",
-        "genericCredentialType": "httpCustomAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {"name": "Content-Type", "value": "application/json"}
-          ]
-        },
         "sendBody": true,
-        "specifyBody": "string",
-        "body": "={{ JSON.stringify({action:'version',version:6,key:$credentials.apiKey}) }}"
+        "specifyBody": "json",
+        "jsonBody": "={\"action\":\"version\",\"version\":6,\"key\":\"{{ $('Set Config').first().json.ANKI_CONNECT_KEY }}\"}",
+        "genericAuthType": "httpCustomAuth"
       },
       "credentials": {
         "httpCustomAuth": {
@@ -79,7 +138,10 @@
       "name": "Anki Up?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [860, 300],
+      "position": [
+        860,
+        300
+      ],
       "parameters": {
         "conditions": {
           "options": {
@@ -90,11 +152,11 @@
           "conditions": [
             {
               "id": "cond-anki-up",
-              "leftValue": "={{ $json.result }}",
-              "rightValue": 0,
+              "leftValue": "={{ $json.result !== null && $json.error === null }}",
+              "rightValue": true,
               "operator": {
-                "type": "number",
-                "operation": "larger"
+                "type": "boolean",
+                "operation": "equals"
               }
             }
           ],
@@ -107,7 +169,10 @@
       "name": "Stop (Anki Down)",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [1060, 460],
+      "position": [
+        1060,
+        460
+      ],
       "parameters": {}
     },
     {
@@ -115,21 +180,33 @@
       "name": "Miniflux Entries",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1060, 300],
+      "position": [
+        1060,
+        300
+      ],
       "continueOnFail": true,
       "parameters": {
         "method": "GET",
         "url": "={{ $('Set Config').first().json.MINIFLUX_API_URL + '/v1/entries' }}",
         "authentication": "genericCredentialType",
-        "genericCredentialType": "httpHeaderAuth",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            {"name": "status",    "value": "unread"},
-            {"name": "direction", "value": "desc"},
-            {"name": "limit",     "value": "={{ $('Set Config').first().json.MINIFLUX_FETCH_LIMIT }}"}
+            {
+              "name": "status",
+              "value": "unread"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            },
+            {
+              "name": "limit",
+              "value": "={{ $('Set Config').first().json.MINIFLUX_FETCH_LIMIT }}"
+            }
           ]
-        }
+        },
+        "genericAuthType": "httpHeaderAuth"
       },
       "credentials": {
         "httpHeaderAuth": {
@@ -143,9 +220,12 @@
       "name": "Build Prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1260, 300],
+      "position": [
+        1260,
+        300
+      ],
       "parameters": {
-        "jsCode": "const config = $('Set Config').first().json;\nconst entries = $json.entries || [];\n\nif (!entries.length) {\n  return [];\n}\n\nfunction stripHtml(html) {\n  return (html || '').replace(/<[^>]*>/g, '').replace(/\\s+/g, ' ').trim();\n}\n\nconst fetchLimit = parseInt(config.MINIFLUX_FETCH_LIMIT) || 30;\nconst snippets = entries.slice(0, fetchLimit).map(e => {\n  const title = (e.title || '').slice(0, 100);\n  const content = stripHtml(e.content || e.summary || '').slice(0, 300);\n  const url = e.url || '';\n  return 'TITLE: ' + title + '\\nURL: ' + url + '\\nCONTENT: ' + content;\n}).join('\\n\\n---\\n\\n');\n\nconst systemPrompt = [\n  'You are an English learning assistant. Extract sentences from articles worth memorizing for professional use.',\n  '',\n  'Output a JSON array ONLY — no markdown fences, no commentary, raw JSON. Each item:',\n  '{',\n  '  \"sentence\": \"full original sentence from the article\",',\n  '  \"expression\": \"key phrase or collocation (2-6 words)\",',\n  '  \"korean_translation\": \"Korean translation of the expression\",',\n  '  \"intuition\": \"why a native speaker uses this naturally (1 sentence)\",',\n  '  \"usage_context\": \"example using the expression in a different context\",',\n  '  \"why_good\": \"professional reuse value and native-sounding quality\",',\n  '  \"score\": 0,',\n  '  \"source_title\": \"article title\",',\n  '  \"source_url\": \"article URL\"',\n  '}',\n  '',\n  'Score 80+: broadly reusable in professional/technical writing, native-sounding collocation or idiom.',\n  'Reject: single words, overly academic jargon, domain-specific terms that only work in one field.'\n].join('\\n');\n\nreturn [{\n  json: {\n    model: config.LLM_MODEL,\n    messages: [\n      { role: 'system', content: systemPrompt },\n      { role: 'user', content: 'Extract learning candidates from these articles:\\n\\n' + snippets }\n    ]\n  }\n}];"
+        "jsCode": "const config = $('Set Config').first().json;\nconst entries = $json.entries || [];\n\nif (!entries.length) {\n  return [];\n}\n\nfunction stripHtml(html) {\n  return (html || '').replace(/<[^>]*>/g, '').replace(/\\s+/g, ' ').trim();\n}\n\nconst fetchLimit = parseInt(config.MINIFLUX_FETCH_LIMIT) || 30;\nconst snippets = entries.slice(0, fetchLimit).map(e => {\n  const title = (e.title || '').slice(0, 100);\n  const content = stripHtml(e.content || e.summary || '').slice(0, 300);\n  const url = e.url || '';\n  return 'TITLE: ' + title + '\\nURL: ' + url + '\\nCONTENT: ' + content;\n}).join('\\n\\n---\\n\\n');\n\nconst systemPrompt = [\n  'You are an English learning assistant. Extract sentences from articles worth memorizing for professional use.',\n  '',\n  'Output a JSON array ONLY \u2014 no markdown fences, no commentary, raw JSON. Each item:',\n  '{',\n  '  \"sentence\": \"full original sentence from the article\",',\n  '  \"expression\": \"key phrase or collocation (2-6 words)\",',\n  '  \"korean_translation\": \"Korean translation of the expression\",',\n  '  \"intuition\": \"why a native speaker uses this naturally (1 sentence)\",',\n  '  \"usage_context\": \"example using the expression in a different context\",',\n  '  \"why_good\": \"professional reuse value and native-sounding quality\",',\n  '  \"score\": 0,',\n  '  \"source_title\": \"article title\",',\n  '  \"source_url\": \"article URL\"',\n  '}',\n  '',\n  'Score 80+: broadly reusable in professional/technical writing, native-sounding collocation or idiom.',\n  'Reject: single words, overly academic jargon, domain-specific terms that only work in one field.'\n].join('\\n');\n\nreturn [{\n  json: {\n    model: config.LLM_MODEL,\n    messages: [\n      { role: 'system', content: systemPrompt },\n      { role: 'user', content: 'Extract learning candidates from these articles:\\n\\n' + snippets }\n    ]\n  }\n}];"
       }
     },
     {
@@ -153,22 +233,19 @@
       "name": "LLM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1460, 300],
+      "position": [
+        1460,
+        300
+      ],
       "continueOnFail": true,
       "parameters": {
         "method": "POST",
         "url": "={{ $('Set Config').first().json.LLM_API_URL }}",
         "authentication": "genericCredentialType",
-        "genericCredentialType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {"name": "Content-Type", "value": "application/json"}
-          ]
-        },
         "sendBody": true,
-        "specifyBody": "string",
-        "body": "={{ JSON.stringify($json) }}"
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "genericAuthType": "httpHeaderAuth"
       },
       "credentials": {
         "httpHeaderAuth": {
@@ -182,7 +259,10 @@
       "name": "Parse Rank",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1660, 300],
+      "position": [
+        1660,
+        300
+      ],
       "parameters": {
         "jsCode": "const config = $('Set Config').first().json;\nconst MIN_SCORE = parseInt(config.MIN_SCORE) || 80;\nconst MAX_DAILY = parseInt(config.MAX_DAILY_CANDIDATES) || 1;\n\nif ($json.error) return []; // LLM HTTP error via continueOnFail\n\nconst content = ($json && $json.choices && $json.choices[0] && $json.choices[0].message && $json.choices[0].message.content) ? $json.choices[0].message.content : '';\n\nlet candidates;\ntry {\n  const cleaned = content.replace(/^\\uFEFF/, '').replace(/^```(?:json)?\\n?/, '').replace(/\\n?```$/, '').trim();\n  candidates = JSON.parse(cleaned);\n  if (!Array.isArray(candidates)) throw new Error('not an array');\n} catch (e) {\n  throw new Error('LLM non-JSON response: ' + e.message + ' | content: ' + content.slice(0, 200));\n}\n\nreturn candidates\n  .filter(c => (c.score || 0) >= MIN_SCORE && (c.expression || '').trim().length > 0)\n  .sort((a, b) => b.score - a.score)\n  .slice(0, MAX_DAILY)\n  .map(c => ({\n    json: {\n      sentence:       c.sentence || '',\n      expression:     c.expression || '',\n      korean:         c.korean_translation || '',\n      intuition:      c.intuition || '',\n      usageContext:   c.usage_context || '',\n      whyGood:        c.why_good || '',\n      score:          c.score || 0,\n      sourceTitle:    c.source_title || '',\n      sourceUrl:      c.source_url || '',\n      findNotesQuery: 'deck:' + JSON.stringify(config.TARGET_DECK) + ' Expression:' + JSON.stringify((c.expression || ''))\n    }\n  }));"
       }
@@ -192,22 +272,19 @@
       "name": "Create Deck",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1860, 300],
+      "position": [
+        1860,
+        300
+      ],
       "continueOnFail": true,
       "parameters": {
         "method": "POST",
         "url": "={{ $('Set Config').first().json.ANKI_CONNECT_URL }}",
         "authentication": "genericCredentialType",
-        "genericCredentialType": "httpCustomAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {"name": "Content-Type", "value": "application/json"}
-          ]
-        },
         "sendBody": true,
-        "specifyBody": "string",
-        "body": "={{ JSON.stringify({action:'createDeck',version:6,key:$credentials.apiKey,params:{deck:$('Set Config').first().json.TARGET_DECK}}) }}"
+        "specifyBody": "json",
+        "jsonBody": "={\"action\":\"createDeck\",\"version\":6,\"key\":\"{{ $('Set Config').first().json.ANKI_CONNECT_KEY }}\",\"params\":{\"deck\":\"{{ $('Set Config').first().json.TARGET_DECK }}\"}}",
+        "genericAuthType": "httpCustomAuth"
       },
       "credentials": {
         "httpCustomAuth": {
@@ -221,21 +298,18 @@
       "name": "Find Notes",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2060, 300],
+      "position": [
+        2060,
+        300
+      ],
       "parameters": {
         "method": "POST",
         "url": "={{ $('Set Config').first().json.ANKI_CONNECT_URL }}",
         "authentication": "genericCredentialType",
-        "genericCredentialType": "httpCustomAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {"name": "Content-Type", "value": "application/json"}
-          ]
-        },
         "sendBody": true,
-        "specifyBody": "string",
-        "body": "={{ JSON.stringify({action:'findNotes',version:6,key:$credentials.apiKey,params:{query:$('Parse Rank').item.json.findNotesQuery}}) }}"
+        "specifyBody": "json",
+        "jsonBody": "={\"action\":\"findNotes\",\"version\":6,\"key\":\"{{ $('Set Config').first().json.ANKI_CONNECT_KEY }}\",\"params\":{\"query\":{{ JSON.stringify($('Parse Rank').item.json.findNotesQuery) }}}}",
+        "genericAuthType": "httpCustomAuth"
       },
       "credentials": {
         "httpCustomAuth": {
@@ -249,7 +323,10 @@
       "name": "New?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [2260, 300],
+      "position": [
+        2260,
+        300
+      ],
       "parameters": {
         "conditions": {
           "options": {
@@ -277,21 +354,18 @@
       "name": "Add Note",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2460, 300],
+      "position": [
+        2460,
+        300
+      ],
       "parameters": {
         "method": "POST",
         "url": "={{ $('Set Config').first().json.ANKI_CONNECT_URL }}",
         "authentication": "genericCredentialType",
-        "genericCredentialType": "httpCustomAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {"name": "Content-Type", "value": "application/json"}
-          ]
-        },
         "sendBody": true,
-        "specifyBody": "string",
-        "body": "={{ JSON.stringify({action:'addNote',version:6,key:$credentials.apiKey,params:{note:{deckName:$('Set Config').first().json.TARGET_DECK,modelName:$('Set Config').first().json.MODEL_NAME,fields:{Sentence:$('Parse Rank').item.json.sentence,Expression:$('Parse Rank').item.json.expression,Korean:$('Parse Rank').item.json.korean,Intuition:$('Parse Rank').item.json.intuition,UsageContext:$('Parse Rank').item.json.usageContext,WhyGood:$('Parse Rank').item.json.whyGood,SourceTitle:$('Parse Rank').item.json.sourceTitle,SourceUrl:$('Parse Rank').item.json.sourceUrl,GeneratedAt:$now.toISO()},options:{allowDuplicate:false},tags:['auto-generated','daily-candidate','rss','topdown','feynman-lite']}}}) }}"
+        "specifyBody": "json",
+        "jsonBody": "={\"action\":\"addNote\",\"version\":6,\"key\":\"{{ $('Set Config').first().json.ANKI_CONNECT_KEY }}\",\"params\":{\"note\":{\"deckName\":\"{{ $('Set Config').first().json.TARGET_DECK }}\",\"modelName\":\"{{ $('Set Config').first().json.MODEL_NAME }}\",\"fields\":{\"Sentence\":{{ JSON.stringify($('Parse Rank').item.json.sentence) }},\"Expression\":{{ JSON.stringify($('Parse Rank').item.json.expression) }},\"Korean\":{{ JSON.stringify($('Parse Rank').item.json.korean) }},\"Intuition\":{{ JSON.stringify($('Parse Rank').item.json.intuition) }},\"UsageContext\":{{ JSON.stringify($('Parse Rank').item.json.usageContext) }},\"WhyGood\":{{ JSON.stringify($('Parse Rank').item.json.whyGood) }},\"SourceTitle\":{{ JSON.stringify($('Parse Rank').item.json.sourceTitle) }},\"SourceUrl\":{{ JSON.stringify($('Parse Rank').item.json.sourceUrl) }},\"GeneratedAt\":{{ JSON.stringify($now.toISO()) }}},\"options\":{\"allowDuplicate\":false},\"tags\":[\"auto-generated\",\"daily-candidate\",\"rss\"]}}}",
+        "genericAuthType": "httpCustomAuth"
       },
       "credentials": {
         "httpCustomAuth": {
@@ -305,21 +379,18 @@
       "name": "Sync",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2660, 300],
+      "position": [
+        2860,
+        300
+      ],
       "parameters": {
         "method": "POST",
         "url": "={{ $('Set Config').first().json.ANKI_CONNECT_URL }}",
         "authentication": "genericCredentialType",
-        "genericCredentialType": "httpCustomAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {"name": "Content-Type", "value": "application/json"}
-          ]
-        },
         "sendBody": true,
-        "specifyBody": "string",
-        "body": "={{ JSON.stringify({action:'sync',version:6,key:$credentials.apiKey}) }}"
+        "specifyBody": "json",
+        "jsonBody": "={\"action\":\"sync\",\"version\":6,\"key\":\"{{ $('Set Config').first().json.ANKI_CONNECT_KEY }}\"}",
+        "genericAuthType": "httpCustomAuth"
       },
       "credentials": {
         "httpCustomAuth": {
@@ -327,69 +398,171 @@
           "name": "AnkiConnect API Key"
         }
       }
+    },
+    {
+      "id": "node-13b-move-deck",
+      "name": "Move to Deck",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2660,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const config = $('Set Config').first().json;\nconst noteId = $('Add Note').item.json.result;\nif (!noteId) return [{json: {skipped: true}}];\n\nconst ankiUrl = config.ANKI_CONNECT_URL;\nconst apiKey  = config.ANKI_CONNECT_KEY;\nconst deck    = config.TARGET_DECK;\n\n// Find cards for this note\nconst findResp = await $helpers.httpRequest({\n  method: 'POST',\n  url: ankiUrl,\n  body: JSON.stringify({action:'findCards',version:6,key:apiKey,params:{query:'nid:'+noteId}}),\n  headers: {'Content-Type':'application/json'},\n  returnFullResponse: false\n});\nconst cardIds = findResp.result || [];\nif (!cardIds.length) return [{json: {noteId, skipped: 'no cards'}}];\n\n// Move to target deck\nconst moveResp = await $helpers.httpRequest({\n  method: 'POST',\n  url: ankiUrl,\n  body: JSON.stringify({action:'changeDeck',version:6,key:apiKey,params:{cards:cardIds,deck:deck}}),\n  headers: {'Content-Type':'application/json'},\n  returnFullResponse: false\n});\nreturn [{json: {noteId, cardIds, deck, moved: moveResp.error === null}}];"
+      }
     }
   ],
   "connections": {
     "Schedule Trigger": {
       "main": [
-        [{"node": "Set Config",        "type": "main", "index": 0}]
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Set Config": {
       "main": [
-        [{"node": "Anki Ping",         "type": "main", "index": 0}]
+        [
+          {
+            "node": "Anki Ping",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Anki Ping": {
       "main": [
-        [{"node": "Anki Up?",          "type": "main", "index": 0}]
+        [
+          {
+            "node": "Anki Up?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Anki Up?": {
       "main": [
-        [{"node": "Miniflux Entries",  "type": "main", "index": 0}],
-        [{"node": "Stop (Anki Down)",  "type": "main", "index": 0}]
+        [
+          {
+            "node": "Miniflux Entries",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop (Anki Down)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Miniflux Entries": {
       "main": [
-        [{"node": "Build Prompt",      "type": "main", "index": 0}]
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Build Prompt": {
       "main": [
-        [{"node": "LLM",              "type": "main", "index": 0}]
+        [
+          {
+            "node": "LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "LLM": {
       "main": [
-        [{"node": "Parse Rank",        "type": "main", "index": 0}]
+        [
+          {
+            "node": "Parse Rank",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Parse Rank": {
       "main": [
-        [{"node": "Create Deck",       "type": "main", "index": 0}]
+        [
+          {
+            "node": "Create Deck",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Create Deck": {
       "main": [
-        [{"node": "Find Notes",        "type": "main", "index": 0}]
+        [
+          {
+            "node": "Find Notes",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Find Notes": {
       "main": [
-        [{"node": "New?",              "type": "main", "index": 0}]
+        [
+          {
+            "node": "New?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "New?": {
       "main": [
-        [{"node": "Add Note",          "type": "main", "index": 0}],
+        [
+          {
+            "node": "Add Note",
+            "type": "main",
+            "index": 0
+          }
+        ],
         []
       ]
     },
     "Add Note": {
       "main": [
-        [{"node": "Sync",              "type": "main", "index": 0}]
+        [
+          {
+            "node": "Move to Deck",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move to Deck": {
+      "main": [
+        [
+          {
+            "node": "Sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
