@@ -19,10 +19,10 @@ context:
 ## Boundaries & Constraints
 
 **Always:**
-- LXC on Proxmox host `${SECRET:HOST_PROXMOX}`, bridge `vmbr1`, **static/reserved LAN IP** (matching OpenWrt DHCP leases, same pattern as the k3s nodes), `onboot: 1`. Sizing ~2 vCPU / 1–2 GB RAM / 8 GB disk — unprivileged container.
+- LXC on Proxmox host `${SECRET:HOST_PROXMOX}`, bridge `vmbr1`, **static/reserved LAN IP** (matching OpenWrt DHCP leases, same pattern as the k3s nodes), `onboot: 1`. Sizing ~2 vCPU / 1.5–2 GB RAM (headroom for slow growth between restarts) / 8 GB disk — unprivileged container.
 - Anki installed at a **pinned version** that matches your client devices (sync protocol is version-sensitive — see Design Notes). Record the version in `versions.yaml` SSOT style or the runbook.
 - AnkiConnect add-on (ID `2055492159`) config: `webBindAddress: "0.0.0.0"`, `apiKey` set to a non-empty secret (LAN is semi-trusted — lock it), `webCorsOriginList` left default (n8n is a non-browser caller, sends no Origin).
-- Anki runs headless via **Xvfb** (`QT_QPA_PLATFORM` offscreen is insufficient for AnkiConnect's webview in some builds — use a real Xvfb display), as a systemd unit with `Restart=always`. A scheduled **daily restart** (timer) absorbs Anki's known slow memory growth.
+- Anki runs headless via **Xvfb** (`QT_QPA_PLATFORM` offscreen is insufficient for AnkiConnect's webview in some builds — use a real Xvfb display), as a systemd unit with `Restart=always`. A **12-hourly restart timer at 03:00 / 15:00 KST** absorbs Anki's slow memory growth — deliberately offset from the 06:00 workflow window so Anki is freshly restarted and stable (~3h up) before the daily card add, and a restart never collides with a run. Collection is on the sync server, so a restart loses no data (seconds of downtime).
 - `anki --syncserver` runs as a second systemd unit with credentials from env (`SYNC_USER1=user:pass`, `SYNC_BASE`, `SYNC_PORT=27701`). The headless Anki client on this same LXC syncs to `http://127.0.0.1:27701`.
 - Secrets (AnkiConnect `apiKey`, `SYNC_USER1`) are NOT committed in clear text — store via the repo's tokenization pattern (`${SECRET:...}`) in any committed config, real values only in the git-ignored `rendered/` output.
 - Backup = Proxmox snapshot/backup of the LXC (collection lives at the Anki base dir on the LXC rootfs), referenced from the existing bare-metal-recovery runbook. No k8s backup-cronjob.
@@ -44,7 +44,7 @@ context:
 | n8n reaches Anki | Pod POSTs `version` to `http://<lxc-ip>:8765` | Returns API version 6 | If unreachable, n8n workflow skips (its own concern) |
 | Migration upload | Desktop has latest collection, endpoint switched to LXC | First sync prompts → choose **Upload**; server now holds full collection | If "Download" chosen by mistake, server is empty → re-do Upload from desktop |
 | Phone first sync | Phone re-pointed at LXC sync server | Prompts → choose **Download**; full collection arrives | Version mismatch → bump/align Anki versions |
-| Memory growth | Anki running for days | Daily restart timer cycles it; AnkiConnect resumes | `Restart=always` covers crashes |
+| Memory growth | Anki running many hours | 12-hourly timer (03:00/15:00) cycles it; AnkiConnect resumes | `Restart=always` covers crashes |
 | LXC reboot | Proxmox host or LXC restarts | `onboot` + systemd units bring Anki + syncserver back | Verify with `version` curl post-boot |
 
 </frozen-after-approval>
@@ -58,7 +58,7 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `docs/runbooks/anki-lxc.md` -- the full runbook: (1) Proxmox LXC creation (Ubuntu/Debian, vmbr1, reserved IP, `onboot`, unprivileged, sizing); (2) install Anki at the pinned version + AnkiConnect add-on; (3) AnkiConnect config (`webBindAddress`, `apiKey`, cors) with values tokenized; (4) two systemd units — `anki-headless` (Xvfb + Anki, `Restart=always`) and `anki-syncserver` (`anki --syncserver`, env creds) — plus a daily restart `systemd timer`; (5) one-time **migration** steps (desktop: final AnkiWeb sync → switch custom sync URL → Upload; phone + LXC client: Download); (6) verification commands; (7) AnkiWeb fallback note.
+- [ ] `docs/runbooks/anki-lxc.md` -- the full runbook: (1) Proxmox LXC creation (Ubuntu/Debian, vmbr1, reserved IP, `onboot`, unprivileged, sizing); (2) install Anki at the pinned version + AnkiConnect add-on; (3) AnkiConnect config (`webBindAddress`, `apiKey`, cors) with values tokenized; (4) two systemd units — `anki-headless` (Xvfb + Anki, `Restart=always`) and `anki-syncserver` (`anki --syncserver`, env creds) — plus a `systemd timer` restarting `anki-headless` every 12h (`OnCalendar=*-*-* 03,15:00:00`, TZ Asia/Seoul), offset from the 06:00 workflow; (5) one-time **migration** steps (desktop: final AnkiWeb sync → switch custom sync URL → Upload; phone + LXC client: Download); (6) verification commands; (7) AnkiWeb fallback note.
 - [ ] `versions.yaml` -- add the pinned Anki version (and AnkiConnect add-on note) as SSOT, with a re-resolve/bump comment tying server+client compatibility.
 
 **Acceptance Criteria:**
@@ -82,5 +82,5 @@ context:
 - `curl -s http://<lxc-ip>:8765 -d '{"action":"deckNames","version":6,"key":"<apiKey>"}'` -- expected: existing decks listed
 
 **Manual checks:**
-- On the LXC: `systemctl is-active anki-headless anki-syncserver` → both `active`; `systemctl list-timers | grep anki` → daily restart timer present.
+- On the LXC: `systemctl is-active anki-headless anki-syncserver` → both `active`; `systemctl list-timers | grep anki` → 12-hourly restart timer (next fire 03:00 or 15:00) present.
 - Phone Anki points at the custom sync server and pulls the full collection.
