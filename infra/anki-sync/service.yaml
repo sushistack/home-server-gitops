@@ -1,4 +1,4 @@
-# No selector — Endpoints below routes to the Anki LXC at ${SECRET:IP_ANKI_LXC}:27701.
+# No selector — EndpointSlice below routes to the Anki LXC at ${SECRET:IP_ANKI_LXC}:27701.
 # Traefik picks this up as a normal backend via the IngressRoute in this same namespace.
 apiVersion: v1
 kind: Service
@@ -12,14 +12,18 @@ spec:
       port: 27701
       targetPort: 27701
 ---
-apiVersion: v1
-kind: Endpoints
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
 metadata:
   name: anki-sync
   namespace: anki-sync
-subsets:
+  labels:
+    kubernetes.io/service-name: anki-sync
+addressType: IPv4
+endpoints:
   - addresses:
-      - ip: "${SECRET:IP_ANKI_LXC}"
-    ports:
-      - name: sync
-        port: 27701
+      - ${SECRET:IP_ANKI_LXC}
+ports:
+  - name: sync
+    port: 27701
+    protocol: TCP
