@@ -278,7 +278,11 @@ data:
             artist_data["qualityProfileId"] = int(
                 os.getenv("LIDARR_QUALITY_PROFILE_ID", "1")
             )
+            artist_data["metadataProfileId"] = int(
+                os.getenv("LIDARR_METADATA_PROFILE_ID", "1")
+            )
             artist_data["rootFolderPath"] = artist_data.get("rootFolderPath", "/music")
+            artist_data["monitorNewItems"] = "all"
             artist_data["addOptions"] = {"monitor": "all", "searchForMissingAlbums": True}
 
             post_resp = requests.post(
