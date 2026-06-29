@@ -3,6 +3,7 @@ kind: Kustomization
 
 resources:
   - namespace.yaml
+  - pvc-music-local.yaml
   - configmap.yaml
   - sealedsecret.yaml
   - deployment.yaml

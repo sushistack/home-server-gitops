@@ -53,7 +53,12 @@ spec:
             - name: script
               mountPath: /scripts/curator.py
               subPath: curator.py   # ConfigMap-mounted script (PEP 723 inline deps)
+            - name: music
+              mountPath: /mnt/music
       volumes:
         - name: script
           configMap:
             name: music-curator-script
+        - name: music
+          persistentVolumeClaim:
+            claimName: music-local

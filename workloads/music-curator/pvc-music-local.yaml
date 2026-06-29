@@ -1,0 +1,41 @@
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: music-curator-music-local
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  capacity:
+    storage: 200Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  local:
+    path: /mnt/music
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: ["k3s-cp-1"]
+  claimRef:
+    namespace: music-curator
+    name: music-local
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: music-local
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: music-curator-music-local
+  resources:
+    requests:
+      storage: 200Gi
