@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# infra/langfuse/ — kustomize overlay (Source 2 of argocd/apps/langfuse.yaml multi-source Application).
+# Deployed alongside the Langfuse Helm chart into the `langfuse` namespace.
+# Resources here must NOT conflict with Helm-managed resources.
+resources:
+  - sealedsecret.yaml    # langfuse-secrets: all credentials (8 keys). MUST be sealed before first sync.
+  - certificate.yaml     # cert-manager Certificate -> langfuse-tls (letsencrypt-prod, DNS-01)
+  - ingressroute.yaml    # Traefik IngressRoute (websecure) + HTTP->HTTPS redirect middleware
+
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/name: langfuse
+      app.kubernetes.io/instance: langfuse
+      app.kubernetes.io/part-of: langfuse
+      app.kubernetes.io/managed-by: argocd
+      app.kubernetes.io/component: infra

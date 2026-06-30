@@ -1,0 +1,188 @@
+# Langfuse v3 self-hosted LLM observability — tracing, prompt hub, RAGAS eval scoring.
+#
+# Multi-source Application (ArgoCD 3.x):
+#   Source 1: Official Langfuse Helm chart (6 bundled subcharts — web, worker, postgres,
+#             clickhouse, redis, minio). Chart version pinned in versions.yaml.
+#   Source 2: infra/langfuse/ kustomize overlay — SealedSecret (langfuse-secrets) +
+#             Traefik IngressRoute + cert-manager Certificate.
+#
+# DEPLOY ORDER (operator, first time):
+#   1. Seal infra/langfuse/sealedsecret.yaml using the recipe in
+#      docs/deploy-prompts/langfuse-seal-recipe.md, commit + push.
+#   2. Set DOMAIN_LANGFUSE in internal/tokens.env (e.g. langfuse.eli.kr).
+#   3. Add CF DNS + CF Access policy for DOMAIN_LANGFUSE in Cloudflare dashboard.
+#   4. Sync this Application in ArgoCD (automated sync below picks it up on push).
+#   5. Visit https://<DOMAIN_LANGFUSE> and create the first admin account.
+#   6. Once admin account exists, set langfuse.features.signUpDisabled: true via PR.
+#
+# CLICKHOUSE NOTE: default chart values spin up 3 replicas + ZooKeeper.
+# `clickhouse.replicaCount: 1` and `clusterEnabled: false` override prevents this —
+# do NOT revert these for a single-node homelab.
+#
+# SECRET REFERENCES: all credentials live in the single `langfuse-secrets` SealedSecret
+# (infra/langfuse/sealedsecret.yaml). The chart references it via secretKeyRef /
+# existingSecret patterns. The SealedSecret MUST exist before the first sync or the
+# web/worker pods will CrashLoop on missing env vars.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: langfuse
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"   # workload wave: after platform infra (waves 0–2)
+spec:
+  project: homelab
+  sources:
+    # Source 1: Langfuse Helm chart — all 6 subcomponents (web, worker, postgres, clickhouse, redis, minio)
+    - repoURL: https://langfuse.github.io/langfuse-k8s
+      chart: langfuse
+      targetRevision: 1.5.37   # == versions.yaml langfuse.chartVersion (appVersion 3.201.1)
+      helm:
+        releaseName: langfuse
+        values: |
+          # ── Langfuse application ──────────────────────────────────────────────
+          langfuse:
+            nextauth:
+              url: "https://langfuse.eli.kr"   # == DOMAIN_LANGFUSE — update if domain differs
+              secret:
+                secretKeyRef:
+                  name: langfuse-secrets
+                  key: nextauth-secret
+            salt:
+              secretKeyRef:
+                name: langfuse-secrets
+                key: salt
+            encryptionKey:
+              secretKeyRef:
+                name: langfuse-secrets
+                key: encryption-key
+            features:
+              telemetryEnabled: false   # no SaaS phone-home
+              signUpDisabled: false     # allow first admin account creation; set true after
+            # Traefik IngressRoute is in infra/langfuse/ — disable chart's standard Ingress.
+            ingress:
+              enabled: false
+            web:
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  memory: 1Gi
+            worker:
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+
+          # ── PostgreSQL (bitnamilegacy subchart) ───────────────────────────────
+          # ponytail: single primary, no HA — upgrade path is Bitnami Postgres HA chart if needed.
+          postgresql:
+            deploy: true
+            auth:
+              username: langfuse
+              database: langfuse
+              existingSecret: langfuse-secrets
+              secretKeys:
+                userPasswordKey: postgresql-password
+            primary:
+              persistence:
+                enabled: true
+                storageClass: local-path-retain
+                size: 10Gi
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  memory: 512Mi
+
+          # ── ClickHouse (OLAP for traces/observations) ─────────────────────────
+          # replicaCount: 1 + clusterEnabled: false is MANDATORY for single-node homelab.
+          # Default is 3 replicas + ZooKeeper ensemble (~3× resource × 3 pods). Do NOT revert.
+          clickhouse:
+            deploy: true
+            replicaCount: 1
+            clusterEnabled: false
+            auth:
+              username: default
+              existingSecret: langfuse-secrets
+              existingSecretKey: clickhouse-password
+            persistence:
+              enabled: true
+              storageClass: local-path-retain
+              size: 20Gi
+            resources:
+              requests:
+                cpu: 200m
+                memory: 512Mi
+              limits:
+                memory: 2Gi
+
+          # ── Redis / Valkey (queue + cache) ────────────────────────────────────
+          redis:
+            deploy: true
+            auth:
+              enabled: true
+              existingSecret: langfuse-secrets
+              existingSecretPasswordKey: redis-password
+            primary:
+              persistence:
+                enabled: true
+                storageClass: local-path-retain
+                size: 2Gi
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  memory: 256Mi
+
+          # ── MinIO (S3-compatible blob store) ──────────────────────────────────
+          # Stores raw trace payloads before ClickHouse ingestion + media uploads.
+          s3:
+            deploy: true
+            storageProvider: s3
+            bucket: langfuse
+            region: us-east-1
+            forcePathStyle: true
+            accessKeyId:
+              secretKeyRef:
+                name: langfuse-secrets
+                key: minio-root-user
+            secretAccessKey:
+              secretKeyRef:
+                name: langfuse-secrets
+                key: minio-root-password
+            auth:
+              existingSecret: langfuse-secrets
+              rootUserSecretKey: minio-root-user
+              rootPasswordSecretKey: minio-root-password
+            persistence:
+              enabled: true
+              storageClass: local-path-retain
+              size: 10Gi
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                memory: 512Mi
+
+    # Source 2: infra/langfuse/ kustomize overlay — SealedSecret + IngressRoute + Certificate
+    - repoURL: https://github.com/sushistack/homelab-gitops.git
+      targetRevision: HEAD
+      path: infra/langfuse
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: langfuse
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

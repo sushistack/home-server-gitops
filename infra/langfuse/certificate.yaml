@@ -1,0 +1,15 @@
+# Langfuse — per-host production TLS cert via cert-manager + letsencrypt-prod (DNS-01).
+# Same pattern as miniflux, karakeep, netdata etc. (Epic 4 golden path).
+# cert-manager renews automatically (renewBefore default: 30 days before expiry).
+# The `langfuse-tls` Secret is referenced by the websecure IngressRoute below.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: langfuse-tls
+spec:
+  secretName: langfuse-tls
+  dnsNames:
+    - "${SECRET:DOMAIN_LANGFUSE}"   # e.g. langfuse.eli.kr — set in internal/tokens.env
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer

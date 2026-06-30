@@ -49,6 +49,17 @@ sealed-secrets:
   appVersion: v0.37.0
   kubeseal: v0.37.0        # local CLI pin — keep in lockstep with appVersion on any bump
 
+langfuse:
+  # Langfuse v3 self-hosted LLM observability — tracing, prompt hub, RAGAS eval scores.
+  # Community-maintained Helm chart: https://langfuse.github.io/langfuse-k8s
+  # Bundles 6 subcomponents: web, worker, postgres (bitnamilegacy), clickhouse, redis, minio.
+  # Application: argocd/apps/langfuse.yaml  Infra overlay: infra/langfuse/
+  repo: https://langfuse.github.io/langfuse-k8s
+  chart: langfuse
+  # renovate: datasource=helm depName=langfuse registryUrl=https://langfuse.github.io/langfuse-k8s
+  chartVersion: 1.5.37    # -> appVersion 3.201.1
+  appVersion: 3.201.1
+
 argocd-image-updater:
   # Auto-digest follow for ntfy-web ONLY (our own app; CI repins :latest every main push). Tracks
   # the digest :latest points to and writes it back to git → ArgoCD syncs. Every OTHER image stays
