@@ -79,14 +79,13 @@ spec:
 
           # ── PostgreSQL (bitnamilegacy subchart) ───────────────────────────────
           # ponytail: single primary, no HA — upgrade path is Bitnami Postgres HA chart if needed.
+          # Bitnami default key for user password is `password` (no secretKeys override needed).
           postgresql:
             deploy: true
             auth:
               username: langfuse
               database: langfuse
               existingSecret: langfuse-secrets
-              secretKeys:
-                userPasswordKey: postgresql-password
             primary:
               persistence:
                 enabled: true
