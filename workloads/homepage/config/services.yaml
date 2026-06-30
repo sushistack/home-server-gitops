@@ -119,14 +119,6 @@
           # To regenerate: printf '%s%s' "$PASSWORD" "$SALT" | md5sum
           token: "{{HOMEPAGE_VAR_NAVIDROME_TOKEN}}"
           salt: "{{HOMEPAGE_VAR_NAVIDROME_SALT}}"
-    - lidarr:
-        href: https://${SECRET:DOMAIN_LIDARR}
-        icon: lidarr.png
-        description: Music collection
-        widget:
-          type: lidarr
-          url: https://${SECRET:DOMAIN_LIDARR}
-          key: "{{HOMEPAGE_VAR_LIDARR_API_KEY}}"
     - slskd:
         href: https://${SECRET:DOMAIN_SLSKD}
         icon: slskd.png
